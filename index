@@ -1,1642 +1,1185 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
-  <!-- Bootstrap 5 -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
-  
-  <title>日報兼経費精算システム</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>【建築専用】貸与品管理アプリ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.8/index.global.min.js'></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .table-responsive { max-height: 75vh; }
+        .status-lent { background-color: #f8d7da !important; }
+        .status-stock { background-color: #d1e7dd !important; }
+        .status-reserved { background-color: #cce5ff !important; }
+        th { white-space: nowrap; }
+        .action-buttons button { margin-right: 5px; }
+        .action-buttons > button:last-child { margin-right: 0; }
+        #loadingSpinner { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060; }
+        .fc-event { cursor: pointer; font-weight: 500; }
+        .nav-link { cursor: pointer; }
+        #calendarDetailModal .modal-body { font-size: 1.1rem; }
+        #calendarDetailModal .modal-body p { margin-bottom: 0.5rem; }
+        
+        .item-name-cell { display: flex; align-items: flex-start; }
+        .item-name-cell .btn { margin-right: 8px; flex-shrink: 0; }
+        .fc-timeline-event { padding: 8px 5px !important; font-size: 0.9rem !important; border-radius: 5px; }
+        .fc-daygrid-event { padding: 4px !important; font-size: 0.85rem !important; margin: 1px 2px !important; }
+        .fc-list-event-title a { color: inherit !important; text-decoration: none !important; }
+        .fc .fc-toolbar-chunk:last-child { text-align: right; }
+        
+        #calendar {
+            height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
 
-  <style>
-    /* 読み込み中オーバーレイ */
-    #loading-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.6);
-      z-index: 9998;
-      display: none; /* 初期状態は非表示 */
-      justify-content: center;
-      align-items: center;
-    }
-    #loading-spinner {
-      z-index: 9999;
-      color: white;
-      text-align: center;
-    }
-
-    /* ビューの切り替え */
-    .app-view {
-      display: none; /* すべてのビューを非表示 */
-    }
-    .app-view.active {
-      display: block; /* activeクラスを持つビューのみ表示 */
-    }
-
-    /* タイムシート */
-    .timesheet-table th, .timesheet-table td {
-      vertical-align: middle;
-      padding: 0.4rem;
-    }
-    .timesheet-table .time-col {
-      width: 65px;
-      font-size: 0.9rem;
-      text-align: center;
-      background-color: #f8f9fa; /* 時刻列に背景色を追加 */
-    }
-    .timesheet-table .type-col {
-      width: 140px;
-    }
-    /* .timesheet-table .content-col {} */
-    .timesheet-table .expense-col {
-      width: 60px;
-      text-align: center;
-    }
-
-    /* タイムシートの入力欄 (v5 修正) */
-    .timesheet-table .form-control-sm,
-    .timesheet-table .form-select-sm,
-    .timesheet-table .form-control-datalist { /* v5: datalist用 */
-      border-radius: 0; /* 角を四角く */
-      border: 1px solid #ced4da;
-    }
-    /* 経費ボタン (画像のデザインに寄せる) */
-    .expense-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 30px; /* 円のサイズ */
-      height: 30px; /* 円のサイズ */
-      border-radius: 50%; /* 完全な円 */
-      border: 1px solid #0d6efd;
-      color: #0d6efd;
-      background-color: #fff;
-      font-size: 1.2rem; /* + のサイズ */
-      line-height: 1;
-      text-decoration: none;
-      cursor: pointer;
-    }
-    .expense-button:hover {
-      background-color: #0d6efd;
-      color: #fff;
-    }
-    /* 経費が登録されたらボタンの色を変える */
-    .expense-button.has-expense {
-      background-color: #dc3545; /* 危険色 (赤) */
-      border-color: #dc3545;
-      color: #fff;
-    }
-    .expense-button.has-expense:hover {
-      background-color: #b02a37;
-      border-color: #b02a37;
-    }
-    .expense-button .expense-count {
-      display: none; /* カウントは表示しない (仕様変更) */
-    }
-
-
-    /* 承認待ち一覧 (B) */
-    .report-list-item {
-      cursor: pointer;
-    }
-    .report-list-item:hover {
-      background-color: #f8f9fa;
-    }
-
-    /* 日報一覧 (E) */
-    #E-my-reports-list-body tr {
-      cursor: pointer;
-    }
-  </style>
+        @media (max-width: 767px) {
+            .fc-daygrid-event { font-size: 0.7rem !important; padding: 1px 3px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .fc .fc-toolbar.fc-header-toolbar { font-size: 0.8rem; }
+            .fc .fc-toolbar-title { font-size: 1.2em; }
+            .fc .fc-daygrid-day-number, .fc .fc-col-header-cell-cushion { font-size: 0.8em; }
+            .row.g-2.mb-3 {
+                margin-left: 0;
+                margin-right: 0;
+            }
+            .row.g-2.mb-3 .col-md-1, .row.g-2.mb-3 .col-md-2, .row.g-2.mb-3 .col-md-3 {
+                padding-left: 5px;
+                padding-right: 5px;
+            }
+        }
+        .fc-day-other .fc-daygrid-day-top {
+            color: #bbb;
+        }
+    </style>
 </head>
 <body>
+    <div id="loadingSpinner" class="d-none"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>
 
-  <!-- ナビゲーションバー -->
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="#"><i class="bi bi-calendar-check"></i> 日報システム</a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNav">
-        <!-- ナビゲーションリンク (JSで動的生成) -->
-        <ul class="navbar-nav me-auto mb-2 mb-lg-0" id="nav-links">
-          <!-- (A) 日報入力 -->
-          <li class="nav-item">
-            <a class="nav-link" href="#" data-view="view-A-daily-report">
-              <i class="bi bi-pencil-square"></i> 日報入力
-            </a>
-          </li>
-          <!-- (E) 日報一覧 -->
-          <li class="nav-item">
-            <a class="nav-link" href="#" data-view="view-E-my-reports">
-              <i class="bi bi-list-task"></i> 日報一覧
-            </a>
-          </li>
-          <!-- (D) 経費精算 -->
-          <li class="nav-item">
-            <a class="nav-link" href="#" data-view="view-D-expense-summary">
-              <i class="bi bi-cash-coin"></i> 経費精算
-            </a>
-          </li>
-          <!-- (B) 承認待ち (管理者のみ) -->
-          <? if (isManager) { ?>
-          <li class="nav-item">
-            <a class="nav-link" href="#" data-view="view-B-approval-list">
-              <i class="bi bi-check2-circle"></i> 承認待ち
-              <span class="badge bg-danger" id="approval-count-badge"></span>
-            </a>
-          </li>
-          <? } ?>
+    <header class="bg-dark text-white p-3 shadow-sm">
+        <div class="container-fluid d-flex justify-content-between align-items-center">
+            <h1 class="h4 mb-0">【建築専用】貸与品管理アプリ</h1>
+        </div>
+    </header>
+    
+    <div class="container-fluid mt-3">
+        <ul class="nav nav-tabs" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation"><button class="nav-link active" id="rental-status-tab" data-bs-toggle="tab" data-bs-target="#rental-status-pane" type="button" role="tab">貸出状況</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="calendar-tab" data-bs-toggle="tab" data-bs-target="#calendar-pane" type="button" role="tab">カレンダー</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="item-list-tab" data-bs-toggle="tab" data-bs-target="#item-list-pane" type="button" role="tab">物品一覧</button></li>
         </ul>
-        <div class="navbar-text text-white">
-          <span id="user-info-display"></span> <i class="bi bi-person-circle"></i>
-        </div>
-      </div>
-    </div>
-  </nav>
-
-  <!-- メインコンテナ -->
-  <div class="container-fluid p-3 p-md-4">
-
-    <!-- ===== (A) 日報入力ビュー ===== -->
-    <div id="view-A-daily-report" class="app-view">
-      <h3 class="mb-3"><i class="bi bi-pencil-square"></i> 日報入力・編集</h3>
-
-      <div class="card shadow-sm mb-4">
-        <div class="card-body">
-          <form id="report-header-form">
-            <!-- 日報ID (隠しフィールド) -->
-            <input type="hidden" id="A-reportId">
-            
-            <div class="row g-3">
-              <div class="col-md-3">
-                <label for="A-date" class="form-label">日付 <span class="text-danger">*</span></label>
-                <input type="date" class="form-control" id="A-date" required>
-              </div>
-              <div class="col-md-9">
-                <label for="A-remarks" class="form-label">備考（全体）</label>
-                <input type="text" class="form-control" id="A-remarks" placeholder="本日の総括など">
-              </div>
-            </div>
-
-            <hr>
-
-            <h5 class="mt-3">メーター・走行距離</h5>
-            <div class="row g-3 align-items-end">
-              <div class="col-6 col-md-2">
-                <label for="A-startMeter" class="form-label">始時メーター(km)</label>
-                <input type="number" class="form-control" id="A-startMeter">
-              </div>
-              <div class="col-6 col-md-2">
-                <label for="A-endMeter" class="form-label">終時メーター(km)</label>
-                <input type="number" class="form-control" id="A-endMeter">
-              </div>
-              <div class="col-6 col-md-2">
-                <label for="A-privateKm" class="form-label">私有走行(km)</label>
-                <input type="number" class="form-control" id="A-privateKm" value="0">
-              </div>
-              <div class="col-6 col-md-3">
-                <label class="form-label">本日の走行距離(km)</label>
-                <h4 id="A-mileageDisplay" class="text-primary mb-0">0 km</h4>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- タイムシート -->
-      <div class="card shadow-sm">
-        <div class="card-header">
-          タイムシート (7:00 〜 18:00)
-        </div>
-        <div class="table-responsive">
-          <table class="table table-bordered table-hover timesheet-table mb-0">
-            <thead class="table-light">
-              <tr>
-                <th class="time-col">時間</th>
-                <th class="type-col">活動区分 <span class="text-danger">*</span></th>
-                <th class="content-col">活動内容 (訪問先・業務内容)</th>
-                <th class="expense-col">経費</th>
-              </tr>
-            </thead>
-            <tbody id="A-timesheet-body">
-              <!-- JSで動的生成 (renderTimesheetA) -->
-            </tbody>
-          </table>
-        </div>
-        <div class="card-footer text-center">
-          <button type="button" class="btn btn-secondary" onclick="saveOrSubmitReportA('一時保存')">
-            <i class="bi bi-save"></i> 一時保存
-          </button>
-          <button type="button" class="btn btn-primary" onclick="saveOrSubmitReportA('申請中')">
-            <i class="bi bi-send-check"></i> 申請する
-          </button>
-          <button type="button" class="btn btn-outline-danger ms-3" onclick="resetFormA()">
-            <i class="bi bi-arrow-clockwise"></i> 入力リセット
-          </button>
-        </div>
-      </div>
-      
-      <!-- v7 修正: 活動区分の datalist を更新 (出金 -> 出勤) -->
-      <datalist id="activity-types-list">
-        <option value="出勤">
-        <option value="退社">
-        <option value="移動">
-        <option value="商談">
-        <option value="その他">
-      </datalist>
-
     </div>
 
-    <!-- ===== (B) 承認待ち一覧ビュー ===== -->
-    <div id="view-B-approval-list" class="app-view">
-      <h3 class="mb-3"><i class="bi bi-check2-circle"></i> 承認待ち一覧</h3>
-      <div class="card shadow-sm">
-        <div class="list-group list-group-flush" id="B-approval-list-body">
-          <!-- JSで動的生成 (loadPendingReportsB) -->
+    <main class="container-fluid mt-1">
+        <div class="tab-content" id="myTabContent">
+            <div class="tab-pane fade show active" id="rental-status-pane" role="tabpanel"><div class="card"><div class="card-body">
+                <div class="row g-2 mb-3 align-items-center">
+                    <div class="col-12 col-md-3"><select id="rentalFilterCategory" class="form-select"><option value="">カテゴリ (すべて)</option></select></div>
+                    <div class="col-12 col-md-3"><select id="rentalFilterItem" class="form-select"><option value="">物品 (すべて)</option></select></div>
+                    <div class="col-12 col-md-2"><select id="rentalFilterStatus" class="form-select"><option value="">ステータス (すべて)</option><option value="貸出中">貸出中</option><option value="予約あり">予約あり</option><option value="在庫">在庫</option></select></div>
+                    <div class="col-12 col-md-3"><input type="text" id="rentalSearchInput" class="form-control" placeholder="貸与者・現場名..."></div>
+                    <div class="col-12 col-md-1"><button id="resetRentalFiltersBtn" class="btn btn-outline-secondary w-100"><i class="bi bi-arrow-clockwise"></i></button></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead class="table-light sticky-top"><tr><th>操作</th><th>管理番号</th><th>カテゴリ</th><th>物品名</th><th>ステータス</th><th>貸与者</th><th>現場名</th><th>貸与日</th><th>返却予定日</th></tr></thead>
+                        <tbody id="rental-table-body"></tbody>
+                    </table>
+                </div>
+            </div></div></div>
+            <div class="tab-pane fade" id="calendar-pane" role="tabpanel"><div class="card"><div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="input-group" style="max-width: 600px;">
+                        <select class="form-select" id="calendar-category-filter" style="max-width: 200px;"><option value="">カテゴリ (すべて)</option></select>
+                        <select class="form-select" id="calendar-item-filter"><option value="">物品 (すべて)</option></select>
+                    </div>
+                </div>
+                <div id='calendar'></div>
+            </div></div></div>
+            <div class="tab-pane fade" id="item-list-pane" role="tabpanel"><div class="card"><div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="input-group" style="max-width: 500px;">
+                        <select class="form-select" id="filterColumn" style="max-width: 150px;"><option value="all">すべて</option><option value="管理番号">管理番号</option><option value="物品名">物品名</option><option value="カテゴリ">カテゴリ</option></select>
+                        <input type="text" id="searchInput" class="form-control" placeholder="検索キーワードを入力...">
+                    </div>
+                    <button class="btn btn-success" onclick="openItemModal()"><i class="bi bi-plus-circle"></i> 新規物品登録</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead class="table-light sticky-top"><tr><th>操作</th><th>管理番号</th><th>物品名</th><th>カテゴリ</th><th>校正日・入替日</th><th>備考</th></tr></thead>
+                        <tbody id="item-table-body"></tbody>
+                    </table>
+                </div>
+            </div></div></div>
         </div>
-      </div>
-    </div>
+    </main>
 
-    <!-- ===== (C) 日報詳細ビュー ===== -->
-    <div id="view-C-report-detail" class="app-view">
-      <h3 class="mb-3"><i class="bi bi-file-earmark-text"></i> 日報詳細</h3>
-      
-      <!-- 戻るボタン -->
-      <button class="btn btn-outline-secondary mb-3" id="C-back-button">
-        <i class="bi bi-arrow-left"></i> 戻る
-      </button>
-
-      <!-- ヘッダー情報 -->
-      <div class="card shadow-sm mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h5 class="mb-0" id="C-header-date"></h5>
-          <span class="badge fs-6" id="C-header-status-badge"></span>
+    <div class="modal fade" id="itemModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="itemModalLabel">物品情報</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="itemForm">
+        <input type="hidden" id="form-mode">
+        <input type="hidden" id="form-original-id">
+        <div class="mb-3">
+            <label class="form-label">管理番号</label>
+            <input type="text" class="form-control" id="form-id" required>
         </div>
-        <div class="card-body">
-          <div class="row">
-            <div class="col-md-6">
-              <strong>申請者:</strong> <span id="C-header-applicant"></span>
-            </div>
-            <div class="col-md-6">
-              <strong>申請日:</strong> <span id="C-header-apply-date"></span>
-            </div>
-            <div class="col-md-6">
-              <strong>走行距離:</strong> <span id="C-header-mileage"></span> km
-            </div>
-            <div class="col-md-6">
-              <strong>合計経費:</strong> <span id="C-header-total-expense" class="text-danger fw-bold"></span> 円
-            </div>
-            
-            <!-- v5 修正: 時間合計の表示欄を追加 -->
-            <div class="col-md-6">
-              <strong>移動時間合計:</strong> <span id="C-header-movement-time"></span> 時間
-            </div>
-            <div class="col-md-6">
-              <strong>商談時間合計:</strong> <span id="C-header-meeting-time"></span> 時間
-            </div>
-            
-            <div class="col-12 mt-2">
-              <strong>備考:</strong> <pre id="C-header-remarks" class="bg-light p-2 rounded mb-0"></pre>
-            </div>
-          </div>
+        <div class="mb-3"><label class="form-label">物品名</label><input type="text" class="form-control" id="form-name" required></div><div class="mb-3"><label class="form-label">カテゴリ</label><input type="text" class="form-control" id="form-category" list="category-list" required><datalist id="category-list"></datalist></div><div class="mb-3"><label for="form-maintenance-date" class="form-label">校正日・入替日</label><input type="date" class="form-control" id="form-maintenance-date"></div><div class="mb-3"><label class="form-label">備考</label><textarea class="form-control" id="form-notes" rows="3"></textarea></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button><button type="button" class="btn btn-primary" onclick="handleItemFormSubmit()">保存</button></div></div></div></div>
+    
+    <div class="modal fade" id="lendModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="lendModalLabel">貸出処理</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
+        <p><strong>物品名:</strong> <span id="lend-item-name"></span></p><input type="hidden" id="lend-item-id">
+        <div id="lend-constraint-warning" class="alert alert-info d-none" role="alert"></div>
+        <div class="mb-3"><label class="form-label">貸与者<span class="text-danger ms-1">(必須)</span></label><input type="text" class="form-control" id="lend-borrower" required></div>
+        <div class="mb-3"><label class="form-label">現場名<span class="text-danger ms-1">(必須)</span></label><textarea class="form-control" id="lend-site-name" rows="2" required></textarea></div>
+        <div class="mb-3"><label class="form-label">貸与日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="lend-start-date" required></div>
+        <div class="mb-3"><label class="form-label">返却予定日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="lend-return-date" required></div>
+        <div class="mb-3">
+            <label class="form-label">通知先メールアドレス (任意)</label>
+            <input type="email" class="form-control" id="lend-email" placeholder="複数入力する場合はカンマ (,) で区切ってください">
+            <div class="form-text">操作完了時に通知メールを送信します。</div>
         </div>
-      </div>
-
-      <!-- 行動明細 -->
-      <div class="card shadow-sm mb-4">
-        <div class="card-header">行動明細</div>
-        <div class="table-responsive">
-          <table class="table table-striped mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>時間</th>
-                <th>活動区分</th>
-                <th>活動内容</th>
-              </tr>
-            </thead>
-            <tbody id="C-activities-body">
-              <!-- JSで動的生成 -->
-            </tbody>
-          </table>
+    </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button><button type="button" class="btn btn-primary" onclick="handleLendSubmit()">実行</button></div></div></div></div>
+    
+    <div class="modal fade" id="reservationModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="reservationModalLabel">新規予約</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
+        <p><strong>物品名:</strong> <span id="reservation-item-name"></span></p><input type="hidden" id="reservation-item-id">
+        <div id="reservation-constraint-warning" class="alert alert-info d-none" role="alert"></div>
+        <div class="mb-3"><label class="form-label">予約者<span class="text-danger ms-1">(必須)</span></label><input type="text" class="form-control" id="reservation-borrower" required></div>
+        <div class="mb-3"><label class="form-label">現場名<span class="text-danger ms-1">(必須)</span></label><textarea class="form-control" id="reservation-site-name" rows="2" required></textarea></div>
+        <div class="mb-3"><label class="form-label">予約開始日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="reservation-start-date" required></div>
+        <div class="mb-3"><label class="form-label">予約終了日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="reservation-end-date" required></div>
+        <div class="mb-3">
+            <label class="form-label">通知先メールアドレス (任意)</label>
+            <input type="email" class="form-control" id="reservation-email" placeholder="複数入力する場合はカンマ (,) で区切ってください">
+            <div class="form-text">操作完了時に通知メールを送信します。</div>
         </div>
-      </div>
+    </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button><button type="button" class="btn btn-primary" onclick="handleReservationSubmit()">予約する</button></div></div></div></div>
 
-      <!-- 経費明細 -->
-      <div class="card shadow-sm mb-4">
-        <div class="card-header">経費明細</div>
-        <div class="table-responsive">
-          <table class="table table-striped mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>利用日</th>
-                <th>経費項目</th>
-                <th>金額 (円)</th>
-                <th>備考</th>
-                <th>領収書</th>
-              </tr>
-            </thead>
-            <tbody id="C-expenses-body">
-              <!-- JSで動G的生成 -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- 承認/差戻しボタン (管理者のみ) -->
-      <div id="C-approval-buttons" class="text-center" style="display: none;">
-        <input type="hidden" id="C-reportId">
-        <button class="btn btn-danger btn-lg" onclick="handleRejectC()">
-          <i class="bi bi-x-circle"></i> 差戻し
-        </button>
-        <button class="btn btn-success btn-lg ms-3" onclick="handleApproveC()">
-          <i class="bi bi-check-circle"></i> 承認する
-        </button>
-      </div>
-
-    </div>
-
-    <!-- ===== (D) 経費精算まとめビュー ===== -->
-    <div id="view-D-expense-summary" class="app-view">
-      <h3 class="mb-3"><i class="bi bi-cash-coin"></i> 経費精算まとめ</h3>
-      
-      <div class="alert alert-info">
-        「承認済」ステータスで、まだ経費精算が申請されていない日報が表示されます。<br>
-        対象を選択し、「精算申請を送信」ボタンを押してください。経理担当者に通知が送信されます。
-      </div>
-
-      <div class="card shadow-sm">
-        <div class="card-header">
-          <div class="d-flex justify-content-between align-items-center">
-            <span>精算対象一覧</span>
-            <button class="btn btn-sm btn-primary" onclick="submitFinalExpensesD()">
-              <i class="bi bi-send-check"></i> 選択した日報の精算申請を送信
-            </button>
-          </div>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light">
-              <tr>
-                <th style="width: 50px;">
-                  <input class="form-check-input" type="checkbox" id="D-check-all" onchange="toggleAllCheckboxesD(this.checked)">
-                </th>
-                <th>日付</th>
-                <th>合計経費 (円)</th>
-                <th>経費詳細</th>
-                <th>ID</th>
-              </tr>
-            </thead>
-            <tbody id="D-expense-list-body">
-              <!-- JSで動的生成 -->
-            </tbody>
-            <tfoot class="table-group-divider">
-              <tr>
-                <td colspan="2" class="text-end fw-bold">選択合計</td>
-                <td class="fw-bold text-danger fs-5" id="D-total-selected-amount">0 円</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== (E) 日報一覧ビュー ===== -->
-    <div id="view-E-my-reports" class="app-view">
-      <h3 class="mb-3"><i class="bi bi-list-task"></i> 日報一覧 (自分)</h3>
-      <div class="card shadow-sm">
-        <div class="card-header">
-          <div class="d-flex justify-content-between align-items-center">
-            <span>自分の申請履歴</span>
-            <button class="btn btn-sm btn-outline-primary" onclick="loadMyReportsE()">
-              <i class="bi bi-arrow-clockwise"></i> 更新
-            </button>
-          </div>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>日付</th>
-                <th>ステータス</th>
-                <th>合計経費 (円)</th>
-                <th>備考</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="E-my-reports-list-body">
-              <!-- JSで動的生成 -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-  </div> <!-- /container-fluid -->
-
-
-  <!-- 読み込み中オーバーレイ -->
-  <div id="loading-overlay">
-    <div id="loading-spinner">
-      <div class="spinner-border" role="status" style="width: 3rem; height: 3rem;">
-        <span class="visually-hidden">Loading...</span>
-      </div>
-      <h4 class="mt-3" id="loading-text">読み込み中...</h4>
-    </div>
-  </div>
-
-
-  <!-- (A) 経費登録モーダル -->
-  <div class="modal fade" id="expenseModal" tabindex="-1" aria-labelledby="expenseModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="expenseModalLabel">経費登録</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
+    <div class="modal fade" id="editRentalModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">貸出内容の変更</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
-          <form id="expense-form">
-            <!-- 経費ID (編集用) -->
-            <input type="hidden" id="M-expenseId">
-            <!-- 紐づく時間 (バッジ更新用) -->
-            <input type="hidden" id="M-timeSlot">
-            
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label for="M-useDate" class="form-label">利用日 <span class="text-danger">*</span></label>
-                <input type="date" class="form-control" id="M-useDate" required>
-              </div>
-              <div class="col-md-6">
-                <label for="M-itemCode" class="form-label">経費項目 <span class="text-danger">*</span></label>
-                <select class="form-select" id="M-itemCode" required>
-                  <option value="">選択してください</option>
-                  <!-- JSで動的生成 (loadExpenseItems) -->
-                </select>
-              </div>
-              <div class="col-md-6">
-                <label for="M-amount" class="form-label">金額 (円) <span class="text-danger">*</span></label>
-                <input type="number" class="form-control" id="M-amount" required>
-              </div>
-              <div class="col-12">
-                <label for="M-remarks" class="form-label">備考（内容・訪問先など）</label>
-                <input type="text" class="form-control" id="M-remarks" placeholder="例: 駐車代 (〇〇商事様)">
-              </div>
-              
-              <hr class="my-2">
-              
-              <div class="col-12">
-                <label for="M-receiptImage" class="form-label">領収書アップロード (AI-OCR)</label>
-                <input class="form-control" type="file" id="M-receiptImage" accept="image/*">
-                <div class="form-text">画像ファイル(JPG, PNG等)を選択すると、AIが利用日・金額・備考を自動入力します。</div>
-                <div id="M-ocr-status" class="mt-2"></div>
-              </div>
-              <div class="col-12">
-                <label for="M-receiptUrl" class="form-label">領収書URL</label>
-                <input type="text" class="form-control" id="M-receiptUrl" readonly>
-              </div>
+            <p><strong>物品名:</strong> <span id="edit-rental-item-name"></span></p>
+            <input type="hidden" id="edit-rental-item-id">
+            <div class="mb-3"><label class="form-label">貸与者<span class="text-danger ms-1">(必須)</span></label><input type="text" class="form-control" id="edit-rental-borrower" required></div>
+            <div class="mb-3"><label class="form-label">現場名<span class="text-danger ms-1">(必須)</span></label><textarea class="form-control" id="edit-rental-site-name" rows="2" required></textarea></div>
+            <div class="mb-3"><label class="form-label">新しい貸与日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="edit-rental-start-date" required></div>
+            <div class="mb-3"><label class="form-label">新しい返却予定日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="edit-rental-return-date" required></div>
+            <div class="mb-3">
+                <label class="form-label">通知先メールアドレス (任意)</label>
+                <input type="email" class="form-control" id="edit-rental-email" placeholder="複数入力する場合はカンマ (,) で区切ってください">
+                <div class="form-text">操作完了時に通知メールを送信します。</div>
             </div>
-          </form>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-          <button type="button" class="btn btn-primary" onclick="addExpenseItemA()">
-            <i class="bi bi-check-lg"></i> この内容で登録
-          </button>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button><button type="button" class="btn btn-primary" onclick="handleEditRentalSubmit()">更新</button></div>
+    </div></div></div>
+
+    <div class="modal fade" id="editReservationModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">予約内容の変更</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p><strong>物品名:</strong> <span id="edit-reservation-item-name"></span></p>
+            <input type="hidden" id="edit-reservation-history-id">
+            <div class="mb-3"><label class="form-label">予約者<span class="text-danger ms-1">(必須)</span></label><input type="text" class="form-control" id="edit-reservation-borrower" required></div>
+            <div class="mb-3"><label class="form-label">現場名<span class="text-danger ms-1">(必須)</span></label><textarea class="form-control" id="edit-reservation-site-name" rows="2" required></textarea></div>
+            <div class="mb-3"><label class="form-label">新しい予約開始日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="edit-reservation-start-date" required></div>
+            <div class="mb-3"><label class="form-label">新しい予約終了日<span class="text-danger ms-1">(必須)</span></label><input type="date" class="form-control" id="edit-reservation-end-date" required></div>
+            <div class="mb-3">
+                <label class="form-label">通知先メールアドレス (任意)</label>
+                <input type="email" class="form-control" id="edit-reservation-email" placeholder="複数入力する場合はカンマ (,) で区切ってください">
+                <div class="form-text">操作完了時に通知メールを送信します。</div>
+            </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- Bootstrap 5 JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-  <!-- クライアントサイド JavaScript (ES5準拠) -->
-  <script>
-    // --- グローバル変数 -------------------------------------------------
+        <div class="modal-footer justify-content-between">
+            <button type="button" class="btn btn-danger" id="edit-reservation-cancel-btn"><i class="bi bi-x-circle"></i> 予約取消</button>
+            <div>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-primary" onclick="handleEditReservationSubmit()">更新</button>
+            </div>
+        </div>
+    </div></div></div>
     
-    // GASから渡されるデータ
-    var EMPLOYEE_INFO = <?!= employeeInfo ?>;
-    var IS_MANAGER = <?!= isManager ?>; // Boolean (GASから渡されます)
-    var EXPENSE_ITEMS_MASTER = <?!= expenseItems ?>;
+    <div class="modal fade" id="calendarDetailModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header bg-light"><h5 class="modal-title">予定詳細</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p><strong>物品名:</strong> <span id="detail-item-name"></span></p>
+            <p><strong id="detail-borrower-label">貸与者:</strong> <span id="detail-borrower"></span></p>
+            <p><strong>現場名:</strong> <span id="detail-site-name"></span></p>
+            <p><strong id="detail-period-label">貸出期間:</strong> <span id="detail-period"></span></p>
+        </div>
+        <div class="modal-footer justify-content-between">
+            <button type="button" class="btn btn-danger" id="detail-delete-btn">削除</button>
+            <div>
+                <button type="button" class="btn btn-secondary" id="detail-edit-btn">編集</button>
+                <button type="button" class="btn btn-warning" id="detail-return-btn">返却</button>
+            </div>
+        </div>
+    </div></div></div>
     
-    // (A) 日報入力用データ
-    var currentActivities = {}; // { "07:00": { type: "...", content: "..." }, ... }
-    var currentExpenses = [];   // [ { expenseId, timeSlot, itemCode, ... }, ... ]
+    <div class="modal fade" id="scheduleListModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">編集する予定を選択</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p><strong>物品名:</strong> <span id="schedule-list-item-name"></span></p>
+            <ul class="list-group" id="schedule-list"></ul>
+        </div>
+    </div></div></div>
+
+    <div class="modal fade" id="confirmModal" tabindex="-1"><div class="modal-dialog modal-sm"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">確認</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p id="confirm-message"></p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button><button type="button" class="btn btn-primary" id="confirm-ok-btn">OK</button></div></div></div></div>
+    <div class="modal fade" id="alertModal" tabindex="-1"><div class="modal-dialog modal-sm"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">メッセージ</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p id="alert-message"></p></div><div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button></div></div></div></div>
+
+    <div class="modal fade" id="actionChoiceModal" tabindex="-1"><div class="modal-dialog modal-sm"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">操作を選択</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body text-center">
+            <p>この期間で実行する操作を選択してください。</p>
+            <button type="button" class="btn btn-info w-100 mb-2" id="choice-lend-btn">貸出</button>
+            <button type="button" class="btn btn-success w-100" id="choice-reserve-btn">予約</button>
+        </div>
+    </div></div></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    // (A) タイムシートの定義
-    var TIME_SLOTS = [
-      "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
-      "10:00", "10:30", "11:00", "11:30", "12:00", "12:30",
-      "13:00", "13:30", "14:00", "14:30", "15:00", "15:30",
-      "16:00", "16:30", "17:00", "17:30", "18:00"
-    ];
-    // ※ 18:00 は "18:00-18:30" の開始時刻として定義。終了時刻は "18:30" まで。
+    <script>
+        let allItems = [], allRentals = [], calendar;
+        let isCalendarInitialized = false;
+        const itemModal = new bootstrap.Modal(document.getElementById('itemModal'));
+        const lendModal = new bootstrap.Modal(document.getElementById('lendModal'));
+        const editRentalModal = new bootstrap.Modal(document.getElementById('editRentalModal'));
+        const editReservationModal = new bootstrap.Modal(document.getElementById('editReservationModal'));
+        const calendarDetailModal = new bootstrap.Modal(document.getElementById('calendarDetailModal'));
+        const scheduleListModal = new bootstrap.Modal(document.getElementById('scheduleListModal'));
+        const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const alertModal = new bootstrap.Modal(document.getElementById('alertModal'));
+        const reservationModal = new bootstrap.Modal(document.getElementById('reservationModal'));
+        const actionChoiceModal = new bootstrap.Modal(document.getElementById('actionChoiceModal'));
 
-    // (A) 経費モーダルのインスタンス
-    var expenseModalInstance;
+        // ===================================
+        // FUNCTION DEFINITIONS
+        // ===================================
 
-    // (C) 詳細画面の遷移元
-    var viewC_ReturnView = 'view-E-my-reports'; // デフォルトは一覧(E)
+        function showLoading() { document.getElementById('loadingSpinner').classList.remove('d-none'); }
+        function hideLoading() { document.getElementById('loadingSpinner').classList.add('d-none'); }
 
-    // --- 初期化 -------------------------------------------------------
-
-    /**
-     * DOM読み込み完了時の初期化処理
-     */
-    document.addEventListener('DOMContentLoaded', function() {
-      // ユーザー情報表示
-      document.getElementById('user-info-display').textContent = EMPLOYEE_INFO.employeeName || 'ゲスト';
-      
-      // ナビゲーションの初期化
-      buildNavigation();
-      
-      // (A) 経費モーダルの初期化
-      expenseModalInstance = new bootstrap.Modal(document.getElementById('expenseModal'));
-      document.getElementById('expenseModal').addEventListener('shown.bs.modal', onExpenseModalShowA);
-      document.getElementById('expenseModal').addEventListener('hidden.bs.modal', onExpenseModalHideA);
-
-      // (A) 経費モーダルの項目マスタ読み込み
-      loadExpenseItemsMasterA();
-
-      // (A) タイムシートの初期描画
-      renderTimesheetA();
-
-      // (A) メーター自動計算のイベントリスナー設定
-      setupMileageCalculatorA();
-
-      // (A) 領収書アップロード(OCR)のイベントリスナー設定
-      document.getElementById('M-receiptImage').addEventListener('change', handleImageUploadA);
-      
-      // (C) 詳細画面の戻るボタン
-      document.getElementById('C-back-button').addEventListener('click', function() {
-        showView(viewC_ReturnView);
-      });
-      
-      // デフォルトビューの表示 (日報入力を最初に表示)
-      showView('view-A-daily-report');
-    });
-
-    /**
-     * ナビゲーションバーのリンクとイベントリスナーを設定
-     */
-    function buildNavigation() {
-      var navLinks = document.getElementById('nav-links');
-      
-      navLinks.querySelectorAll('.nav-link').forEach(function(link) {
-        link.addEventListener('click', function(e) {
-          e.preventDefault();
-          var viewId = e.currentTarget.dataset.view;
-          showView(viewId);
-          
-          // Bootstrap 5 のトグルを閉じる
-          var navbar = document.getElementById('navbarNav');
-          var bsCollapse = bootstrap.Collapse.getInstance(navbar);
-          if (bsCollapse && navbar.classList.contains('show')) {
-            bsCollapse.hide();
-          }
-        });
-      });
-    }
-
-    /**
-     * (A) 経費モーダルの項目マスタを読み込む
-     */
-    function loadExpenseItemsMasterA() {
-      var select = document.getElementById('M-itemCode');
-      select.innerHTML = '<option value="">選択してください</option>'; // 初期化
-      
-      EXPENSE_ITEMS_MASTER.forEach(function(item) {
-        var option = document.createElement('option');
-        option.value = item['経費項目コード'];
-        option.textContent = item['経費項目'];
-        select.appendChild(option);
-      });
-    }
-
-
-    // --- 汎用: ビュー切り替え & UI ------------------------------------
-
-    /**
-     * 指定されたIDのビューを表示し、他を非表示にする
-     * @param {string} viewId 表示するビューのID
-     */
-    function showView(viewId) {
-      // すべてのビューを非表示
-      document.querySelectorAll('.app-view').forEach(function(view) {
-        view.classList.remove('active');
-      });
-
-      // ナビゲーションのアクティブ状態を更新
-      document.querySelectorAll('#nav-links .nav-link').forEach(function(link) {
-        if (link.dataset.view === viewId) {
-          link.classList.add('active');
-        } else {
-          link.classList.remove('active');
+        function loadInitialData() {
+            showLoading();
+            google.script.run.withSuccessHandler(data => {
+                if(data){
+                    allItems = data.items;
+                    allRentals = data.rentals;
+                    displayAllTables();
+                    populateFilters();
+                }
+                hideLoading();
+            }).withFailureHandler(handleError).getInitialData();
         }
-      });
-      
-      // 対象のビューを表示
-      var targetView = document.getElementById(viewId);
-      if (targetView) {
-        targetView.classList.add('active');
         
-        // ビュー表示時のロード処理
-        switch (viewId) {
-          case 'view-A-daily-report':
-            // 日報入力画面表示時 (日付が空なら今日の日付をセット)
-            if (!document.getElementById('A-date').value) {
-              document.getElementById('A-date').value = getTodayString();
+        function reloadData() {
+            showLoading();
+            google.script.run.withSuccessHandler(data => {
+                if(data){
+                    allItems = data.items;
+                    allRentals = data.rentals;
+                    displayAllTables();
+                    populateFilters(); // カテゴリリストも更新
+                    if (isCalendarInitialized) {
+                        calendar.refetchEvents();
+                        calendar.refetchResources();
+                    }
+                }
+                hideLoading();
+            }).withFailureHandler(handleError).getInitialData();
+        }
+
+        function displayAllTables() {
+            displayRentalStatusTable();
+            filterItems();
+        }
+        
+        function isItemExpired(item) {
+            const maintenanceDateStr = item['校正日・入替日'];
+            if (!maintenanceDateStr) return false;
+            
+            const maintenanceDate = new Date(maintenanceDateStr.replace(/\//g, '-'));
+            const today = new Date();
+            maintenanceDate.setHours(0, 0, 0, 0);
+            today.setHours(0, 0, 0, 0);
+            
+            return maintenanceDate < today;
+        }
+
+        function displayRentalStatusTable() {
+            const rentalTableBody = document.getElementById('rental-table-body');
+            rentalTableBody.innerHTML = '';
+
+            const categoryFilter = document.getElementById('rentalFilterCategory').value;
+            const itemFilter = document.getElementById('rentalFilterItem').value;
+            const statusFilter = document.getElementById('rentalFilterStatus').value;
+            const searchTerm = document.getElementById('rentalSearchInput').value.toLowerCase(); 
+
+            const filtered = allItems.filter(item => {
+                const searchTarget = `${item.貸与者 || ''} ${item.現場名 || ''}`.toLowerCase();
+                
+                return (!categoryFilter || item.カテゴリ === categoryFilter) &&
+                       (!itemFilter || item.管理番号 === itemFilter) &&
+                       (!statusFilter || item.ステータス === statusFilter) &&
+                       (!searchTerm || searchTarget.includes(searchTerm)); 
+            });
+
+            filtered.forEach(item => {
+                const tr = document.createElement('tr');
+                const isExpired = isItemExpired(item);
+                const expiredTitle = isExpired ? `校正期限(${item['校正日・入替日']})切れのため操作できません` : '';
+                
+                const calendarBtn = `<button class="btn btn-outline-primary btn-sm" onclick="goToFilteredCalendar('${item.管理番号}')">カレンダー</button>`;
+                const editSchedulesBtn = `<button class="btn btn-secondary btn-sm" onclick="openScheduleListModal('${item.管理番号}')">編集</button>`;
+
+                let otherActionButtonsHTML = '';
+                const reserveBtn = `<button class="btn btn-success btn-sm" onclick="openReservationModal('${item.管理番号}')" ${isExpired ? 'disabled' : ''} title="${expiredTitle}">予約</button>`;
+                
+                let statusBadge = '';
+                switch(item.ステータス) {
+                    case '貸出中':
+                        tr.className = 'status-lent';
+                        statusBadge = `<span class="badge bg-danger">${item.ステータス}</span>`;
+                        const currentRental = allRentals.find(r => r.管理番号 === item.管理番号 && r.処理 === '貸出');
+                        const historyId = currentRental ? `'${currentRental.履歴ID}'` : null;
+                        otherActionButtonsHTML = `
+                            <button class="btn btn-warning btn-sm" ${!historyId ? 'disabled' : ''} onclick="handleReturn(${historyId})">返却</button>
+                            ${reserveBtn}`;
+                        break;
+                    case '予約あり':
+                        tr.className = 'status-reserved';
+                        statusBadge = `<span class="badge bg-primary">${item.ステータス}</span>`;
+                        otherActionButtonsHTML = `<button class="btn btn-info btn-sm" onclick="openLendModal('${item.管理番号}')" ${isExpired ? 'disabled' : ''} title="${expiredTitle}">貸出</button> ${reserveBtn}`;
+                        break;
+                    case '在庫':
+                    default:
+                        tr.className = 'status-stock';
+                        statusBadge = `<span class="badge bg-success">${item.ステータス}</span>`;
+                        otherActionButtonsHTML = `
+                            <button class="btn btn-info btn-sm" onclick="openLendModal('${item.管理番号}')" ${isExpired ? 'disabled' : ''} title="${expiredTitle}">貸出</button>
+                            ${reserveBtn}`;
+                        break;
+                }
+                
+                tr.innerHTML = `
+                    <td><div class="action-buttons">${calendarBtn} ${editSchedulesBtn} ${otherActionButtonsHTML}</div></td>
+                    <td>${item.管理番号}</td>
+                    <td>${item.カテゴリ}</td>
+                    <td>${item.物品名}</td>
+                    <td>${statusBadge}</td>
+                    <td>${item.貸与者 || ''}</td>
+                    <td>${item.現場名 || ''}</td>
+                    <td>${item.貸与日 || ''}</td>
+                    <td>${item.返却予定日 || ''}</td>`;
+                rentalTableBody.appendChild(tr);
+            });
+        }
+        
+        function resetRentalFilters() {
+            document.getElementById('rentalFilterCategory').value = '';
+            document.getElementById('rentalFilterItem').value = '';
+            document.getElementById('rentalFilterStatus').value = '';
+            document.getElementById('rentalSearchInput').value = ''; 
+            updateItemFilter('rentalFilterCategory', 'rentalFilterItem'); 
+            displayRentalStatusTable(); 
+        }
+
+        function filterItems() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const filterColumn = document.getElementById('filterColumn').value;
+            const itemTableBody = document.getElementById('item-table-body');
+            itemTableBody.innerHTML = '';
+
+            const filteredItems = allItems.filter(item => {
+                if (!searchTerm) return true;
+                if (filterColumn === 'all') {
+                    return ['管理番号', '物品名', 'カテゴリ'].some(col => item[col] && String(item[col]).toLowerCase().includes(searchTerm));
+                } else {
+                    return item[filterColumn] && String(item[filterColumn]).toLowerCase().includes(searchTerm);
+                }
+            });
+
+            filteredItems.forEach(item => {
+                const tr = document.createElement('tr');
+                const actionButtonsHTML = `<button class="btn btn-secondary btn-sm" onclick="openItemModal('${item.管理番号}')">編集</button><button class="btn btn-danger btn-sm" onclick="handleDelete('${item.管理番号}')">削除</button>`;
+                tr.innerHTML = `<td><div class="action-buttons">${actionButtonsHTML}</div></td><td>${item.管理番号}</td><td>${item.物品名}</td><td>${item.カテゴリ}</td><td>${item['校正日・入替日'] || ''}</td><td>${item.備考 || ''}</td>`;
+                itemTableBody.appendChild(tr);
+            });
+        }
+        
+        function populateFilters() {
+            const calendarCategorySelect = document.getElementById('calendar-category-filter');
+            const rentalCategorySelect = document.getElementById('rentalFilterCategory');
+
+            calendarCategorySelect.innerHTML = '<option value="">カテゴリ (すべて)</option>';
+            rentalCategorySelect.innerHTML = '<option value="">カテゴリ (すべて)</option>';
+            
+            const categories = [...new Set(allItems.map(item => item.カテゴリ))].sort((a, b) => a.localeCompare(b));
+
+            categories.forEach(category => {
+                if(category) {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category;
+                    calendarCategorySelect.appendChild(option.cloneNode(true));
+                    rentalCategorySelect.appendChild(option);
+                }
+            });
+            
+            const categoryDatalist = document.getElementById('category-list');
+            categoryDatalist.innerHTML = '';
+            categories.forEach(category => {
+                if(category) {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category;
+                    categoryDatalist.appendChild(option);
+                }
+            });
+
+            updateItemFilter('calendar-category-filter', 'calendar-item-filter');
+            updateItemFilter('rentalFilterCategory', 'rentalFilterItem');
+        }
+        
+        function updateItemFilter(categorySelectId, itemSelectId) {
+            const categorySelect = document.getElementById(categorySelectId);
+            const itemSelect = document.getElementById(itemSelectId);
+            
+            if (!itemSelect) return; 
+
+            const selectedCategory = categorySelect.value;
+            const previouslySelectedItem = itemSelect.value;
+
+            itemSelect.innerHTML = `<option value="">物品 (すべて)</option>`;
+            
+            const itemsToDisplay = selectedCategory 
+                ? allItems.filter(item => item.カテゴリ === selectedCategory) 
+                : allItems;
+                
+            itemsToDisplay
+                .sort((a, b) => a.物品名.localeCompare(b.物品名))
+                .forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.管理番号;
+                    option.textContent = `${item.物品名} (${item.管理番号})`;
+                    itemSelect.appendChild(option);
+                });
+                
+            if ([...itemSelect.options].map(opt => opt.value).includes(previouslySelectedItem)) {
+                itemSelect.value = previouslySelectedItem;
+            } else {
+                itemSelect.value = "";
             }
-            break;
-          case 'view-B-approval-list':
-            loadPendingReportsB();
-            break;
-          case 'view-D-expense-summary':
-            loadApprovedExpensesD();
-            break;
-          case 'view-E-my-reports':
-            loadMyReportsE();
-            break;
         }
-      } else {
-        console.error('View not found: ' + viewId);
-      }
-    }
+        
+        function setupCalendarFilters() {
+            const categorySelect = document.getElementById('calendar-category-filter');
+            const itemSelect = document.getElementById('calendar-item-filter');
 
-    /**
-     * ローディングオーバーレイの表示/非表示
-     * @param {boolean} show 表示フラグ
-     * @param {string} [text] 表示テキスト
-     */
-    function showLoading(show, text) {
-      text = text || '読み込み中...'; // デフォルト引数の代替
-      var overlay = document.getElementById('loading-overlay');
-      document.getElementById('loading-text').textContent = text;
-      overlay.style.display = show ? 'flex' : 'none';
-    }
+            const refetchCalendar = () => {
+                if (isCalendarInitialized) {
+                    initializeCalendar();
+                }
+            };
+            
+            categorySelect.addEventListener('change', () => {
+                updateItemFilter('calendar-category-filter', 'calendar-item-filter');
+                refetchCalendar();
+            });
 
-    /**
-     * 汎用APIエラーハンドラ (v10 修正: 詳細なエラー表示)
-     * @param {Error | object | string} error エラーオブジェクトまたはメッセージ
-     */
-    function onApiError(error) {
-      showLoading(false); // ローディングを非表示
-      
-      var message = '不明なエラーが発生しました。';
-      
-      if (typeof error === 'string') {
-        message = error;
-      } else if (error && error.message) {
-        // google.script.run が返す標準的なエラー
-        message = error.message;
-      } else if (error) {
-        // 予期しない形式の場合、JSON文字列に変換
-        try {
-          message = JSON.stringify(error);
-        } catch (e) {
-          message = 'エラーオブジェクトの解析に失敗しました。';
+            itemSelect.addEventListener('change', refetchCalendar);
         }
-      }
-      
-      console.error('API Error:', error);
-      alert('エラーが発生しました:\n' + message);
-    }
-
-    /**
-     * 今日の日付を "YYYY-MM-DD" 形式で取得
-     */
-    function getTodayString() {
-      var today = new Date();
-      today.setHours(today.getHours() + 9); // JST補正
-      return today.toISOString().split('T')[0];
-    }
-    
-    /**
-     * 数値をカンマ区切りにフォーマット
-     */
-    function formatNumber(num) {
-      return (parseFloat(num) || 0).toLocaleString();
-    }
-    
-    /**
-     * 数値を小数点第2位までフォーマット
-     */
-    function formatHours(num) {
-      return (parseFloat(num) || 0).toFixed(2);
-    }
-
-
-    // --- (A) 日報入力機能 ----------------------------------------------
-
-    /**
-     * (A) タイムシートを描画する (v5 修正: datalist を使用)
-     */
-    function renderTimesheetA() {
-      var tbody = document.getElementById('A-timesheet-body');
-      tbody.innerHTML = ''; // 既存の内容をクリア
-
-      for (var i = 0; i < TIME_SLOTS.length - 1; i++) { // 最後の "18:00" は次の開始時刻なのでループ対象外
-        var startTime = TIME_SLOTS[i];
-        var endTime = TIME_SLOTS[i+1];
         
-        // 復元データ
-        var activity = currentActivities[startTime] || { type: '', content: '' };
+        function initializeCalendar(filterItemId = null) {
+            const calendarEl = document.getElementById('calendar');
+            const isMobile = window.innerWidth < 767;
+            
+            if(calendar) calendar.destroy();
+
+            let calendarOptions = {
+                schedulerLicenseKey: 'GPL-My-Project-Is-Open-Source',
+                locale: 'ja',
+                buttonText: { today: '今日', month: '月' },
+                eventClick: handleCalendarEventClick,
+                dateClick: handleDateClick, 
+                selectable: true,
+                select: handleDateSelect,
+                showNonCurrentDates: true,
+                fixedWeekCount: false
+            };
+            
+            const categoryFilter = document.getElementById('calendar-category-filter').value;
+            const itemFilter = document.getElementById('calendar-item-filter').value;
+
+            const useDayGridView = isMobile || filterItemId || itemFilter;
+
+            if (useDayGridView) {
+                calendarOptions.initialView = 'dayGridMonth'; 
+                calendarOptions.headerToolbar = { left: 'prev,next today', center: 'title', right: 'dayGridMonth' };
+                calendarOptions.dayMaxEvents = 2;
+                calendarOptions.events = (info, success, failure) => {
+                    const currentCategoryFilter = document.getElementById('calendar-category-filter').value;
+                    const currentItemFilter = document.getElementById('calendar-item-filter').value;
+                    const targetItemId = filterItemId || currentItemFilter;
+
+                    google.script.run.withSuccessHandler(events => {
+                        const itemsInCategory = allItems
+                            .filter(item => !currentCategoryFilter || item.カテゴリ === currentCategoryFilter)
+                            .map(item => item.管理番号);
+
+                        const filteredEvents = events.filter(e => {
+                            if (targetItemId) {
+                                return e.resourceId === targetItemId;
+                            }
+                            return itemsInCategory.includes(e.resourceId);
+                        });
+                        success(filteredEvents);
+                    }).withFailureHandler(failure).getCalendarEvents();
+                };
+            } else {
+                calendarOptions.initialView = 'resourceTimelineMonth';
+                calendarOptions.headerToolbar = { left: 'prev,next today', center: 'title', right: 'resourceTimelineMonth' };
+                calendarOptions.resourceAreaColumns = [ { group: true, field: 'category', headerContent: 'カテゴリ' }, { field: 'title', headerContent: '物品名' } ];
+                calendarOptions.resources = (info, success, failure) => {
+                    google.script.run.withSuccessHandler(resources => {
+                        const currentCategoryFilter = document.getElementById('calendar-category-filter').value;
+                        const currentItemFilter = document.getElementById('calendar-item-filter').value;
+                        
+                        const filteredResources = resources.filter(res => 
+                            (!currentCategoryFilter || res.category === currentCategoryFilter) &&
+                            (!currentItemFilter || res.id === currentItemFilter)
+                        );
+                        success(filteredResources);
+                    }).withFailureHandler(failure).getItemsAsResources();
+                };
+                calendarOptions.events = (info, success, failure) => {
+                    google.script.run.withSuccessHandler(success).withFailureHandler(failure).getCalendarEvents();
+                };
+            }
+            
+            calendar = new FullCalendar.Calendar(calendarEl, calendarOptions);
+            calendar.render();
+        }
         
-        var tr = document.createElement('tr');
+        function goToFilteredCalendar(itemId) {
+            const calendarTab = document.getElementById('calendar-tab');
+            calendarTab.dataset.filterId = itemId;
+            const tab = new bootstrap.Tab(calendarTab);
+            tab.show();
+        }
         
-        // 時間
-        tr.innerHTML = '<th class="time-col table-light">' + startTime + '</th>';
+        function handleCalendarEventClick(info) {
+            const props = info.event.extendedProps;
+
+            document.getElementById('detail-item-name').textContent = props.itemName;
+
+            const setupButton = (button, newAction) => {
+                const newButton = button.cloneNode(true);
+                button.parentNode.replaceChild(newButton, button);
+                if (newAction) {
+                    newButton.addEventListener('click', newAction);
+                }
+                return newButton;
+            };
+            
+            const deleteBtnEl = document.getElementById('detail-delete-btn');
+            const editBtnEl = document.getElementById('detail-edit-btn');
+            const returnBtnEl = document.getElementById('detail-return-btn');
+
+
+            if (props.type === 'maintenance') {
+                document.getElementById('detail-borrower-label').textContent = 'イベント:';
+                document.getElementById('detail-borrower').textContent = '校正・入替日';
+                document.getElementById('detail-site-name').textContent = '---';
+                document.getElementById('detail-period-label').textContent = '日付:';
+                document.getElementById('detail-period').textContent = props.maintenanceDate;
+
+                setupButton(returnBtnEl).style.display = 'none';
+                setupButton(editBtnEl).style.display = 'none';
+                setupButton(deleteBtnEl).style.display = 'none';
+                
+            } else if (props.type === 'reservation') {
+                document.getElementById('detail-borrower').textContent = props.borrower;
+                document.getElementById('detail-site-name').textContent = props.siteName || '';
+                document.getElementById('detail-period').textContent = `${props.startDate} ~ ${props.returnDate}`;
+                document.getElementById('detail-borrower-label').textContent = '予約者:';
+                document.getElementById('detail-period-label').textContent = '予約期間:';
+
+                const editBtn = setupButton(editBtnEl, () => {
+                    calendarDetailModal.hide();
+                    openEditReservationModal(props);
+                });
+                editBtn.textContent = '編集';
+                editBtn.className = 'btn btn-secondary';
+                editBtn.style.display = 'inline-block';
+
+                const lendBtn = setupButton(returnBtnEl, () => {
+                    showConfirmModal('この予約を貸出中に変更しますか？', () => {
+                        showLoading();
+                        google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).lendFromReservation(props.historyId);
+                    });
+                });
+                lendBtn.textContent = '貸出';
+                lendBtn.className = 'btn btn-info';
+                lendBtn.style.display = 'inline-block';
+
+                const cancelBtn = setupButton(deleteBtnEl, () => {
+                     showConfirmModal('この予約を取り消しますか？', () => {
+                        showLoading();
+                        google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).cancelReservation(props.historyId);
+                    });
+                });
+                cancelBtn.innerHTML = '<i class="bi bi-x-circle"></i> 予約取消';
+                cancelBtn.className = 'btn btn-danger';
+                cancelBtn.style.display = 'inline-block';
+
+            } else if (props.type === 'returned') {
+                document.getElementById('detail-borrower-label').textContent = '貸与者:';
+                document.getElementById('detail-borrower').textContent = props.borrower;
+                document.getElementById('detail-site-name').textContent = props.siteName || '';
+                document.getElementById('detail-period-label').textContent = '貸出期間:';
+                document.getElementById('detail-period').textContent = `${props.startDate} ~ ${props.returnDate}`;
+                
+                setupButton(returnBtnEl).style.display = 'none';
+                setupButton(editBtnEl).style.display = 'none';
+                setupButton(deleteBtnEl).style.display = 'none';
+                
+            } else { // rental
+                document.getElementById('detail-borrower').textContent = props.borrower;
+                document.getElementById('detail-site-name').textContent = props.siteName || '';
+                document.getElementById('detail-period').textContent = `${props.startDate} ~ ${props.returnDate}`;
+                document.getElementById('detail-borrower-label').textContent = '貸与者:';
+                document.getElementById('detail-period-label').textContent = '貸出期間:';
+
+                const returnBtn = setupButton(returnBtnEl, () => handleReturn(props.historyId));
+                returnBtn.textContent = '返却';
+                returnBtn.className = 'btn btn-warning';
+                returnBtn.style.display = 'inline-block';
+                
+                const editBtn = setupButton(editBtnEl, () => {
+                    calendarDetailModal.hide();
+                    openEditRentalModal(props.itemId);
+                });
+                editBtn.textContent = '編集';
+                editBtn.className = 'btn btn-secondary';
+                editBtn.style.display = 'inline-block';
+
+                const deleteBtn = setupButton(deleteBtnEl, () => {
+                    showAlertModal('貸出中の履歴は削除できません。先に返却処理を行ってください。');
+                });
+                deleteBtn.innerHTML = '履歴削除';
+                deleteBtn.className = 'btn btn-danger';
+                deleteBtn.style.display = 'inline-block';
+            }
+
+            calendarDetailModal.show();
+        }
+
+        function openActionChoiceModal(itemId, startDate, endDate) {
+            const item = itemId ? allItems.find(i => i.管理番号 === itemId) : null;
+            if (!item) {
+                showAlertModal('カレンダー上で予定を追加したい物品を選択するか、右上のフィルターから物品を選択してください。');
+                return;
+            }
+            
+            const maintenanceDateStr = item['校正日・入替日'];
+            if (maintenanceDateStr) {
+                const maintenanceDate = new Date(maintenanceDateStr.replace(/\//g, '-'));
+                const selectedStartDate = new Date(startDate);
+                
+                maintenanceDate.setHours(0, 0, 0, 0);
+                selectedStartDate.setHours(0, 0, 0, 0);
+
+                if (selectedStartDate > maintenanceDate) {
+                    showAlertModal('校正・入替日以降の日付は選択できません。');
+                    return;
+                }
+            }
+
+            choiceContext = { itemId, startDate, endDate };
+
+            document.getElementById('choice-lend-btn').onclick = () => {
+                actionChoiceModal.hide();
+                openLendModal(choiceContext.itemId, choiceContext.startDate);
+            };
+            document.getElementById('choice-reserve-btn').onclick = () => {
+                actionChoiceModal.hide();
+                openReservationModal(choiceContext.itemId, choiceContext.startDate, choiceContext.endDate);
+            };
+
+            actionChoiceModal.show();
+        }
+
+        function handleDateClick(info) {
+            const itemId = info.resource ? info.resource.id : document.getElementById('calendar-item-filter').value;
+            openActionChoiceModal(itemId, info.dateStr, info.dateStr);
+        }
+
+        function handleDateSelect(info) {
+            const itemId = info.resource ? info.resource.id : document.getElementById('calendar-item-filter').value;
+            let endDate = new Date(info.endStr);
+            endDate.setDate(endDate.getDate() -1);
+            openActionChoiceModal(itemId, info.startStr, endDate.toISOString().split('T')[0]);
+        }
+
+        function openItemModal(itemId = null) {
+            document.getElementById('itemForm').reset();
+            const originalIdInput = document.getElementById('form-original-id');
+
+            if (itemId) {
+                document.getElementById('itemModalLabel').textContent = '物品情報の編集';
+                document.getElementById('form-mode').value = 'edit';
+                const item = allItems.find(i => i.管理番号 === itemId);
+                document.getElementById('form-id').value = item.管理番号;
+                originalIdInput.value = item.管理番号;
+                document.getElementById('form-name').value = item.物品名;
+                document.getElementById('form-category').value = item.カテゴリ;
+                const maintenanceDate = item['校正日・入替日'];
+                document.getElementById('form-maintenance-date').value = maintenanceDate ? maintenanceDate.replace(/\//g, '-') : '';
+                document.getElementById('form-notes').value = item.備考;
+            } else {
+                document.getElementById('itemModalLabel').textContent = '新規物品登録';
+                document.getElementById('form-mode').value = 'add';
+                document.getElementById('form-id').value = '';
+                originalIdInput.value = '';
+            }
+            itemModal.show();
+        }
+
+        function handleItemFormSubmit() {
+            const mode = document.getElementById('form-mode').value;
+            const itemData = {
+                管理番号: document.getElementById('form-id').value,
+                物品名: document.getElementById('form-name').value,
+                カテゴリ: document.getElementById('form-category').value,
+                '校正日・入替日': document.getElementById('form-maintenance-date').value,
+                備考: document.getElementById('form-notes').value,
+            };
+
+            if (mode === 'edit') {
+                itemData.original管理番号 = document.getElementById('form-original-id').value;
+            }
+
+            if (!itemData.管理番号 || !itemData.物品名 || !itemData.カテゴリ) {
+                showAlertModal('管理番号、物品名、カテゴリは必須です。');
+                return;
+            }
+            showLoading();
+            const func = mode === 'add' ? 'addItem' : 'updateItem';
+            google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError)[func](itemData);
+        }
         
-        // 活動区分 (v5 修正: select -> datalist + input)
-        var tdType = document.createElement('td');
-        tdType.className = 'type-col';
-        var inputType = document.createElement('input');
-        inputType.type = 'text';
-        inputType.className = 'form-control form-control-sm form-control-datalist A-activity-type';
-        inputType.dataset.time = startTime;
-        inputType.setAttribute('list', 'activity-types-list'); // datalist を紐付け
-        inputType.value = activity.type;
+        function openLendModal(itemId, startDate = null) {
+            const item = allItems.find(i => i.管理番号 === itemId);
+            if (isItemExpired(item)) {
+                showAlertModal(`この物品は校正・入替期限(${item['校正日・入替日']})を過ぎているため、貸し出せません。`);
+                return;
+            }
+            document.getElementById('lend-item-name').textContent = item.物品名;
+            document.getElementById('lend-item-id').value = item.管理番号;
+            document.getElementById('lend-borrower').value = '';
+            document.getElementById('lend-site-name').value = '';
+            document.getElementById('lend-start-date').value = startDate || new Date().toISOString().split('T')[0];
+            document.getElementById('lend-email').value = ''; // メール欄をクリア
+            
+            // 現場名の必須化に合わせて、required属性を設定
+            document.getElementById('lend-site-name').setAttribute('required', 'required');
+            document.getElementById('lend-borrower').setAttribute('required', 'required');
+
+
+            const returnDateInput = document.getElementById('lend-return-date');
+            returnDateInput.value = '';
+            returnDateInput.removeAttribute('max');
+
+            const warningDiv = document.getElementById('lend-constraint-warning');
+            warningDiv.classList.add('d-none');
+            
+            showLoading();
+            google.script.run.withSuccessHandler(response => {
+                hideLoading();
+                const constraints = response.constraints;
+                const schedule = response.schedule;
+
+                if (constraints && constraints.latestReturnDate) {
+                    returnDateInput.max = constraints.latestReturnDate;
+                }
+
+                if (schedule && schedule.length > 0) {
+                    let scheduleHtml = '<strong>今後の予定:</strong><ul class="list-unstyled mb-0">';
+                    schedule.forEach(event => {
+                        const user = event.siteName || event.borrower;
+                        scheduleHtml += `<li>${event.type}: ${event.startDate} ~ ${event.endDate} (${user})</li>`;
+                    });
+                    scheduleHtml += '</ul>';
+                    warningDiv.innerHTML = scheduleHtml;
+                    warningDiv.classList.remove('d-none');
+                }
+                
+                lendModal.show();
+            }).withFailureHandler(handleError).getItemScheduleInfo(itemId);
+        }
         
-        // イベントリスナー (活動区分)
-        inputType.addEventListener('change', function(e) { // input -> change
-          updateActivityA(e.target.dataset.time, 'type', e.target.value);
+        function handleLendSubmit() {
+            const data = {
+                itemId: document.getElementById('lend-item-id').value,
+                borrower: document.getElementById('lend-borrower').value,
+                siteName: document.getElementById('lend-site-name').value,
+                startDate: document.getElementById('lend-start-date').value,
+                returnDate: document.getElementById('lend-return-date').value,
+                email: document.getElementById('lend-email').value // メールアドレスを取得
+            };
+            // ▼▼▼ 修正: 現場名(data.siteName)のチェックを追加 ▼▼▼
+            if (!data.borrower || !data.siteName || !data.startDate || !data.returnDate) { 
+                showAlertModal('貸与者、現場名、貸与日、返却予定日は必須です。'); return;
+            }
+
+            if (new Date(data.returnDate) < new Date(data.startDate)) {
+                showAlertModal('返却予定日は貸与日以降の日付を選択してください。');
+                return;
+            }
+            showLoading();
+            google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).lendItem(data);
+        }
+        
+        function openReservationModal(itemId, startDate = null, endDate = null) {
+            const item = itemId ? allItems.find(i => i.管理番号 === itemId) : null;
+            if (!item) {
+                showAlertModal('カレンダー上で予約したい物品を選択するか、右上のフィルターから物品を選択してください。');
+                return;
+            }
+            if (isItemExpired(item)) {
+                showAlertModal(`この物品は校正・入替期限(${item['校正日・入替日']})を過ぎているため、予約できません。`);
+                return;
+            }
+            
+            document.getElementById('reservation-item-name').textContent = item.物品名;
+            document.getElementById('reservation-item-id').value = itemId;
+            document.getElementById('reservation-borrower').value = '';
+            document.getElementById('reservation-site-name').value = '';
+            document.getElementById('reservation-email').value = ''; // メール欄をクリア
+
+            // 現場名の必須化に合わせて、required属性を設定
+            document.getElementById('reservation-site-name').setAttribute('required', 'required');
+            document.getElementById('reservation-borrower').setAttribute('required', 'required');
+
+
+            const startDateInput = document.getElementById('reservation-start-date');
+            const endDateInput = document.getElementById('reservation-end-date');
+            
+            const today = new Date().toISOString().split('T')[0];
+            startDateInput.min = today;
+
+            startDateInput.value = startDate && startDate >= today ? startDate : today;
+            endDateInput.value = endDate || startDateInput.value;
+            
+            endDateInput.min = startDateInput.value;
+
+            startDateInput.onchange = () => {
+                if(startDateInput.value) {
+                    endDateInput.min = startDateInput.value;
+                    if(endDateInput.value < startDateInput.value) {
+                        endDateInput.value = startDateInput.value;
+                    }
+                }
+            };
+            
+            const warningDiv = document.getElementById('reservation-constraint-warning');
+            warningDiv.classList.add('d-none');
+
+            showLoading();
+            google.script.run.withSuccessHandler(response => {
+                hideLoading();
+                const schedule = response.schedule;
+                if (schedule && schedule.length > 0) {
+                    let scheduleHtml = '<strong>今後の予定:</strong><ul class="list-unstyled mb-0">';
+                    schedule.forEach(event => {
+                        const user = event.siteName || event.borrower;
+                        scheduleHtml += `<li>${event.type}: ${event.startDate} ~ ${event.endDate} (${user})</li>`;
+                    });
+                    scheduleHtml += '</ul>';
+                    warningDiv.innerHTML = scheduleHtml;
+                    warningDiv.classList.remove('d-none');
+                }
+                reservationModal.show();
+            }).withFailureHandler(handleError).getItemScheduleInfo(itemId);
+        }
+        
+        function handleReservationSubmit() {
+            const data = {
+                itemId: document.getElementById('reservation-item-id').value,
+                borrower: document.getElementById('reservation-borrower').value,
+                siteName: document.getElementById('reservation-site-name').value,
+                startDate: document.getElementById('reservation-start-date').value,
+                returnDate: document.getElementById('reservation-end-date').value,
+                email: document.getElementById('reservation-email').value // メールアドレスを取得
+            };
+            if (!data.itemId) { showAlertModal('物品が選択されていません。'); return; }
+            // ▼▼▼ 修正: 現場名(data.siteName)のチェックを追加 ▼▼▼
+            if (!data.borrower || !data.siteName || !data.startDate || !data.returnDate) { 
+                showAlertModal('予約者、現場名、予約開始日、予約終了日は必須です。'); return;
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (new Date(data.startDate) < today) {
+                showAlertModal('予約開始日は本日以降の日付を選択してください。');
+                return;
+            }
+
+            if (new Date(data.returnDate) < new Date(data.startDate)) {
+                showAlertModal('予約終了日は予約開始日以降の日付を選択してください。');
+                return;
+            }
+            showLoading();
+            google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).addReservation(data);
+        }
+
+        function openEditRentalModal(itemId) {
+            const item = allItems.find(i => i.管理番号 === itemId);
+            document.getElementById('edit-rental-item-name').textContent = item.物品名;
+            document.getElementById('edit-rental-item-id').value = item.管理番号;
+            
+            const startDateInput = document.getElementById('edit-rental-start-date');
+            const returnDateInput = document.getElementById('edit-rental-return-date');
+            const borrowerInput = document.getElementById('edit-rental-borrower');
+            const siteNameInput = document.getElementById('edit-rental-site-name');
+            const emailInput = document.getElementById('edit-rental-email'); // ◀◀◀ 修正 (要素を取得)
+
+            // 現場名の必須化に合わせて、required属性を設定
+            document.getElementById('edit-rental-site-name').setAttribute('required', 'required');
+            document.getElementById('edit-rental-borrower').setAttribute('required', 'required');
+
+            // ◀◀◀ 修正 (allRentals から現在貸出中の履歴を探してメールアドレスをセット) ◀◀◀
+            const currentRental = allRentals.find(r => String(r.管理番号) === String(itemId) && r.処理 === '貸出');
+            emailInput.value = currentRental ? currentRental.通知先アドレス || '' : '';
+            // ◀◀◀ 修正ここまで ◀◀◀
+
+            // ▼▼▼ 修正: item.貸与日 が (Code.gs側の修正により) 正しくセットされるはず ▼▼▼
+            const startDate = item.貸与日;
+            const returnDate = item.返却予定日;
+            
+            borrowerInput.value = item.貸与者 || '';
+            siteNameInput.value = item.現場名 || '';
+            startDateInput.value = startDate ? startDate.replace(/\//g, '-') : '';
+            returnDateInput.value = returnDate ? returnDate.replace(/\//g, '-') : '';
+
+            editRentalModal.show();
+        }
+
+        function handleEditRentalSubmit() {
+            const data = {
+                itemId: document.getElementById('edit-rental-item-id').value,
+                borrower: document.getElementById('edit-rental-borrower').value,
+                siteName: document.getElementById('edit-rental-site-name').value,
+                newStartDate: document.getElementById('edit-rental-start-date').value,
+                newReturnDate: document.getElementById('edit-rental-return-date').value,
+                email: document.getElementById('edit-rental-email').value // メールアドレスを取得
+            };
+            // ▼▼▼ 修正: 現場名(data.siteName)のチェックを追加 ▼▼▼
+            if (!data.borrower || !data.siteName || !data.newStartDate || !data.newReturnDate) { 
+                showAlertModal('貸与者、現場名、新しい貸与日、返却予定日を入力してください。'); 
+                return; 
+            }
+            if (new Date(data.newReturnDate) < new Date(data.newStartDate)) {
+                showAlertModal('返却日は貸与日以降の日付を選択してください。');
+                return;
+            }
+
+            showLoading();
+            google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).updateRentalPeriod(data);
+        }
+        
+        function openEditReservationModal(props) {
+            document.getElementById('edit-reservation-item-name').textContent = props.itemName;
+            document.getElementById('edit-reservation-history-id').value = props.historyId;
+            document.getElementById('edit-reservation-borrower').value = props.borrower;
+            document.getElementById('edit-reservation-site-name').value = props.siteName || '';
+            document.getElementById('edit-reservation-email').value = props.email || ''; // ◀◀◀ 修正 (メールアドレスをセット)
+            
+            // 現場名の必須化に合わせて、required属性を設定
+            document.getElementById('edit-reservation-site-name').setAttribute('required', 'required');
+            document.getElementById('edit-reservation-borrower').setAttribute('required', 'required');
+            
+            const startDateInput = document.getElementById('edit-reservation-start-date');
+            const endDateInput = document.getElementById('edit-reservation-end-date');
+
+            startDateInput.value = props.startDate ? props.startDate.replace(/\//g, '-') : '';
+            endDateInput.value = props.returnDate ? props.returnDate.replace(/\//g, '-') : '';
+            
+            const today = new Date().toISOString().split('T')[0];
+            startDateInput.min = today;
+            endDateInput.min = startDateInput.value;
+
+            startDateInput.onchange = () => {
+                if(startDateInput.value) {
+                    endDateInput.min = startDateInput.value;
+                    if(endDateInput.value < startDateInput.value) {
+                        endDateInput.value = startDateInput.value;
+                    }
+                }
+            };
+
+            // 予約取消ボタンのイベントリスナーを（都度）設定
+            const cancelBtn = document.getElementById('edit-reservation-cancel-btn');
+            const newCancelBtn = cancelBtn.cloneNode(true); // 古いリスナーを削除するためにクローン
+            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+            newCancelBtn.addEventListener('click', () => {
+                showConfirmModal('この予約を取り消しますか？', () => {
+                    showLoading();
+                    google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).cancelReservation(props.historyId);
+                });
+            });
+
+            editReservationModal.show();
+        }
+        
+        function handleEditReservationSubmit() {
+            const data = {
+                historyId: document.getElementById('edit-reservation-history-id').value,
+                borrower: document.getElementById('edit-reservation-borrower').value,
+                siteName: document.getElementById('edit-reservation-site-name').value,
+                newStartDate: document.getElementById('edit-reservation-start-date').value,
+                newReturnDate: document.getElementById('edit-reservation-end-date').value,
+                email: document.getElementById('edit-reservation-email').value // メールアドレスを取得
+            };
+            // ▼▼▼ 修正: 現場名(data.siteName)のチェックを追加 ▼▼▼
+            if (!data.borrower || !data.siteName || !data.newStartDate || !data.newReturnDate) {
+                showAlertModal('予約者、現場名、予約開始日、予約終了日は必須です。');
+                return;
+            }
+            if (new Date(data.newReturnDate) < new Date(data.newStartDate)) {
+                showAlertModal('予約終了日は予約開始日以降の日付を選択してください。');
+                return;
+            }
+
+            showLoading();
+            google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).updateReservation(data);
+        }
+
+        function handleReturn(historyId) {
+            showConfirmModal(`この貸出を返却済みにしますか？`, () => {
+                showLoading();
+                google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).returnItem(historyId);
+            });
+            calendarDetailModal.hide();
+        }
+        function handleDelete(itemId) {
+            showConfirmModal('この物品を削除しますか？\nこの操作は元に戻せません。', () => {
+                showLoading();
+                google.script.run.withSuccessHandler(handleSuccess).withFailureHandler(handleError).deleteItem(itemId);
+            });
+        }
+        
+        function openScheduleListModal(itemId) {
+            showLoading();
+            google.script.run.withSuccessHandler(schedules => {
+                hideLoading();
+                const item = allItems.find(i => i.管理番号 === itemId);
+                document.getElementById('schedule-list-item-name').textContent = item.物品名;
+                
+                const listElement = document.getElementById('schedule-list');
+                listElement.innerHTML = '';
+
+                if (schedules.length === 0) {
+                    listElement.innerHTML = '<li class="list-group-item">編集可能な予定はありません。</li>';
+                } else {
+                    schedules.forEach(schedule => {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        
+                        const scheduleType = schedule.type === '貸出' ? '貸出中' : '予約';
+                        const badgeColor = schedule.type === '貸出' ? 'bg-danger' : 'bg-primary';
+
+                        li.innerHTML = `
+                            <div>
+                                <span class="badge ${badgeColor} me-2">${scheduleType}</span>
+                                <strong>${schedule.startDate.replace(/\//g, '-')} ~ ${schedule.returnDate.replace(/\//g, '-')}</strong>
+                                <small class="ms-2 text-muted">(${schedule.siteName || schedule.borrower})</small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-primary">編集</button>
+                        `;
+
+                        li.querySelector('button').addEventListener('click', () => {
+                            scheduleListModal.hide();
+                            if (schedule.type === '貸出') {
+                                openEditRentalModal(itemId);
+                            } else { // '予約'
+                                openEditReservationModal(schedule);
+                            }
+                        });
+                        listElement.appendChild(li);
+                    });
+                }
+                scheduleListModal.show();
+            }).withFailureHandler(handleError).getEditableSchedulesForItem(itemId);
+        }
+        
+        function showConfirmModal(message, callback) {
+            document.getElementById('confirm-message').textContent = message;
+            const okBtn = document.getElementById('confirm-ok-btn');
+            const newOkBtn = okBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+            newOkBtn.addEventListener('click', () => { callback(); confirmModal.hide(); });
+            confirmModal.show();
+        }
+        function showAlertModal(message) {
+            document.getElementById('alert-message').textContent = message;
+            alertModal.show();
+        }
+        
+        function handleSuccess(response) {
+            hideLoading();
+            const modalIds = ['itemModal', 'lendModal', 'editRentalModal', 'editReservationModal', 'reservationModal', 'calendarDetailModal', 'actionChoiceModal', 'scheduleListModal'];
+            modalIds.forEach(id => {
+                const modalEl = document.getElementById(id);
+                if (modalEl) {
+                    bootstrap.Modal.getInstance(modalEl)?.hide();
+                }
+            });
+
+            if (response.success) {
+                if(response.message) showAlertModal(response.message);
+                if (response.shouldReload) {
+                    reloadData();
+                }
+            } else {
+                handleError(new Error(response.message || '不明なエラーが発生しました。'));
+            }
+        }
+
+        function handleError(error) {
+            hideLoading();
+            showAlertModal('エラーが発生しました: ' + error.message);
+        }
+
+        // ===================================
+        // EVENT LISTENERS
+        // ===================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadInitialData();
+            document.getElementById('searchInput').addEventListener('input', filterItems);
+            document.getElementById('filterColumn').addEventListener('change', filterItems);
+            
+            document.getElementById('rentalFilterCategory').addEventListener('change', () => {
+                updateItemFilter('rentalFilterCategory', 'rentalFilterItem');
+                displayRentalStatusTable();
+            });
+            document.getElementById('rentalFilterItem').addEventListener('change', displayRentalStatusTable); 
+            document.getElementById('rentalSearchInput').addEventListener('input', displayRentalStatusTable); 
+            document.getElementById('rentalFilterStatus').addEventListener('change', displayRentalStatusTable);
+            
+            document.getElementById('resetRentalFiltersBtn').addEventListener('click', resetRentalFilters);
+
+            document.getElementById('calendar-tab').addEventListener('shown.bs.tab', (event) => {
+                const filterId = event.target.dataset.filterId;
+                if (calendar) {
+                    calendar.destroy();
+                }
+                initializeCalendar(filterId);
+                isCalendarInitialized = true;
+
+                document.getElementById('calendar-item-filter').value = filterId || '';
+                delete event.target.dataset.filterId;
+            });
+            
+            setupCalendarFilters();
         });
-        // 自動補完 (フォーカスアウト時)
-        inputType.addEventListener('focusout', autoFillMovementA);
-        tdType.appendChild(inputType);
-        tr.appendChild(tdType);
-
-        // 活動内容
-        var tdContent = document.createElement('td');
-        tdContent.className = 'content-col';
-        var inputContent = document.createElement('input');
-        inputContent.type = 'text';
-        inputContent.className = 'form-control form-control-sm A-activity-content';
-        inputContent.dataset.time = startTime;
-        inputContent.placeholder = '活動内容 (例: 〇〇商事様 商談)';
-        inputContent.value = activity.content;
-        // イベントリスナー (活動内容)
-        inputContent.addEventListener('input', function(e) { // change -> input
-          updateActivityA(e.target.dataset.time, 'content', e.target.value);
-        });
-        tdContent.appendChild(inputContent);
-        tr.appendChild(tdContent);
-
-        // 経費 (スタイル変更)
-        var tdExpense = document.createElement('td');
-        tdExpense.className = 'expense-col';
-        tdExpense.innerHTML = 
-          '<span class="expense-button" ' +
-                'id="expense-badge-' + startTime + '" ' +
-                'onclick="openExpenseModalA(\'' + startTime + '\')">' +
-            '<i class="bi bi-plus"></i>' + // bi-plus-lg から bi-plus に変更
-            '<span class="expense-count" id="expense-count-' + startTime + '">0</span>' + // カウントはCSSで非表示
-          '</span>';
-        tr.appendChild(tdExpense);
-        
-        tbody.appendChild(tr);
-      }
-      
-      // 経費バッジの更新 (編集読み込み時)
-      updateAllExpenseBadgesA();
-    }
-
-    /**
-     * (A) フォーム(A)全体をリセットする
-     */
-    function resetFormA() {
-      document.getElementById('report-header-form').reset();
-      document.getElementById('A-reportId').value = '';
-      document.getElementById('A-date').value = getTodayString();
-      document.getElementById('A-mileageDisplay').textContent = '0 km';
-      
-      currentActivities = {};
-      currentExpenses = [];
-      
-      // タイムシートの入力内容をリセット
-      document.querySelectorAll('.A-activity-type').forEach(function(el) { el.value = ''; });
-      document.querySelectorAll('.A-activity-content').forEach(function(el) { el.value = ''; });
-      
-      // 経費バッジをリセット
-      updateAllExpenseBadgesA();
-      
-      console.log('フォームをリセットしました。');
-    }
-
-    /**
-     * (A) 走行距離計算のイベントリスナーを設定
-     */
-    function setupMileageCalculatorA() {
-      var inputs = ['A-startMeter', 'A-endMeter', 'A-privateKm'];
-      inputs.forEach(function(id) {
-        document.getElementById(id).addEventListener('input', calculateMileageA);
-      });
-    }
-
-    /**
-     * (A) 走行距離を計算して表示
-     */
-    function calculateMileageA() {
-      var start = parseFloat(document.getElementById('A-startMeter').value) || 0;
-      var end = parseFloat(document.getElementById('A-endMeter').value) || 0;
-      var privateKm = parseFloat(document.getElementById('A-privateKm').value) || 0;
-      
-      var mileage = 0;
-      if (end > start) {
-        mileage = (end - start) - privateKm;
-      }
-      
-      document.getElementById('A-mileageDisplay').textContent = Math.max(0, mileage) + ' km';
-    }
-
-    /**
-     * (A) currentActivities オブジェクトを更新
-     * @param {string} timeSlot "07:00" など
-     * @param {'type' | 'content'} key 'type' または 'content'
-     * @param {string} value 入力値
-     */
-    function updateActivityA(timeSlot, key, value) {
-      if (!currentActivities[timeSlot]) {
-        currentActivities[timeSlot] = { type: '', content: '' };
-      }
-      currentActivities[timeSlot][key] = value;
-      // console.log(currentActivities);
-    }
-
-    /**
-     * (A) 活動と活動の間の空白行に "移動" を自動補完する
-     */
-    function autoFillMovementA() {
-      var allTypes = document.querySelectorAll('.A-activity-type');
-      var firstActivityIdx = -1;
-      var lastActivityIdx = -1;
-      
-      // 最初と最後の活動インデックスを探す
-      allTypes.forEach(function(select, index) {
-        if (select.value !== '') {
-          if (firstActivityIdx === -1) {
-            firstActivityIdx = index;
-          }
-          lastActivityIdx = index;
-        }
-      });
-      
-      if (firstActivityIdx === -1) return; // 活動が入力されていない
-
-      // 最初と最後の間をループ
-      for (var i = firstActivityIdx + 1; i < lastActivityIdx; i++) {
-        if (allTypes[i].value === '') { // 空白行
-          allTypes[i].value = '移動';
-          // currentActivities にも反映
-          updateActivityA(allTypes[i].dataset.time, 'type', '移動');
-        }
-      }
-    }
-
-    /**
-     * (A) 経費モーダルを開く
-     * @param {string} timeSlot "07:00" など
-     */
-    function openExpenseModalA(timeSlot) {
-      // 経費が複数ある場合、リスト表示する (TODO)
-      // ひとまず新規登録のみ
-      
-      // モーダルフォームをリセット
-      document.getElementById('expense-form').reset();
-      document.getElementById('M-expenseId').value = '';
-      document.getElementById('M-timeSlot').value = timeSlot; // 紐づく時間をセット
-      
-      // 利用日は日報の日付をデフォルトセット
-      document.getElementById('M-useDate').value = document.getElementById('A-date').value || getTodayString();
-      
-      // OCRステータスをリセット
-      document.getElementById('M-ocr-status').innerHTML = '';
-      document.getElementById('M-receiptUrl').value = '';
-      
-      expenseModalInstance.show();
-    }
-    
-    /**
-     * (A) 経費モーダル表示時の処理
-     */
-    function onExpenseModalShowA() {
-      // (必要に応じて)
-    }
-
-    /**
-     * (A) 経費モーダル非表示時の処理
-     */
-    function onExpenseModalHideA() {
-      // フォームとOCRステータスをクリア
-      document.getElementById('expense-form').reset();
-      document.getElementById('M-ocr-status').innerHTML = '';
-      document.getElementById('M-receiptImage').value = ''; // fileインプットもクリア
-    }
-
-    /**
-     * (A) 領収書画像アップロード処理 (AI-OCR)
-     */
-    function handleImageUploadA(event) {
-      var file = event.target.files[0];
-      if (!file) return;
-
-      var reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = function() {
-        var base64Image = reader.result;
-        
-        var statusEl = document.getElementById('M-ocr-status');
-        statusEl.innerHTML = '<span class="text-primary"><div class="spinner-border spinner-border-sm" role="status"></div> AI-OCRで解析中です...</span>';
-        
-        showLoading(true, 'AI-OCRで解析中...');
-        
-        google.script.run
-          .withSuccessHandler(onOcrSuccessA)
-          .withFailureHandler(onApiError)
-          .processImageOCR(base64Image);
-      };
-      reader.onerror = function(error) {
-        console.error("File reading error: ", error);
-        alert('ファイルの読み込みに失敗しました。');
-      };
-    }
-
-    /**
-     * (A) AI-OCR成功時のコールバック
-     * @param {object} result { success: true, receiptUrl, ocrData: { date, amount, remarks } }
-     */
-    function onOcrSuccessA(result) {
-      showLoading(false);
-      
-      if (result.success && result.ocrData) {
-        var receiptUrl = result.receiptUrl;
-        var ocrData = result.ocrData;
-        
-        document.getElementById('M-ocr-status').innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> OCR解析が完了しました。</span>';
-        
-        // フォームに自動入力
-        if (ocrData.date) {
-          document.getElementById('M-useDate').value = ocrData.date;
-        }
-        if (ocrData.amount) {
-          document.getElementById('M-amount').value = ocrData.amount;
-        }
-        if (ocrData.remarks) {
-          document.getElementById('M-remarks').value = ocrData.remarks;
-        }
-        
-        document.getElementById('M-receiptUrl').value = receiptUrl;
-        
-      } else {
-        onApiError('OCR解析に失敗しました。' + (result.message || ''));
-        document.getElementById('M-ocr-status').innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> OCR解析に失敗しました。</span>';
-      }
-    }
-
-    /**
-     * (A) モーダルから経費アイテムを currentExpenses に追加
-     */
-    function addExpenseItemA() {
-      // バリデーション
-      var form = document.getElementById('expense-form');
-      if (!form.checkValidity()) {
-        form.classList.add('was-validated');
-        alert('必須項目（利用日、経費項目、金額）を入力してください。');
-        return;
-      }
-      form.classList.remove('was-validated');
-      
-      var timeSlot = document.getElementById('M-timeSlot').value;
-      var expense = {
-        expenseId: document.getElementById('M-expenseId').value || 'temp_' + Date.now(), // 一時ID
-        timeSlot: timeSlot,
-        useDate: document.getElementById('M-useDate').value,
-        itemCode: document.getElementById('M-itemCode').value,
-        amount: parseFloat(document.getElementById('M-amount').value) || 0,
-        remarks: document.getElementById('M-remarks').value,
-        receiptUrl: document.getElementById('M-receiptUrl').value,
-      };
-      
-      // TODO: 編集の場合は配列を検索して上書き
-      
-      // 新規
-      currentExpenses.push(expense);
-      
-      // バッジ更新
-      updateExpenseBadgeA(timeSlot);
-      
-      expenseModalInstance.hide();
-    }
-
-    /**
-     * (A) 指定された時間枠の経費バッジを更新
-     * @param {string} timeSlot "07:00" など
-     */
-    function updateExpenseBadgeA(timeSlot) {
-      // 修正1: 経費の件数を取得するため .length を追加
-      var count = currentExpenses.filter(function(ex) {
-        return ex.timeSlot === timeSlot;
-      }).length; 
-      
-      // 修正2: startTime -> timeSlot に修正
-      var countEl = document.getElementById('expense-count-' + timeSlot);
-      var badgeEl = document.getElementById('expense-badge-' + timeSlot);
-      
-      if (countEl && badgeEl) {
-        countEl.textContent = count;
-        if (count > 0) {
-          // badgeEl.classList.remove('bg-primary'); // (旧スタイル)
-          // badgeEl.classList.add('bg-danger'); // (旧スタイル)
-          badgeEl.classList.add('has-expense'); // (新スタイル)
-        } else {
-          // badgeEl.classList.remove('bg-danger'); // (旧スタイル)
-          // badgeEl.classList.add('bg-primary'); // (旧スタイル)
-          badgeEl.classList.remove('has-expense'); // (新スタイル)
-        }
-      }
-    }
-    
-    /**
-     * (A) すべての経費バッジを更新 (編集読み込み用)
-     */
-    function updateAllExpenseBadgesA() {
-      TIME_SLOTS.forEach(function(timeSlot) {
-        updateExpenseBadgeA(timeSlot);
-      });
-    }
-
-    /**
-     * (A) 日報の保存または申請
-     * @param {'一時保存' | '申請中'} status
-     */
-    function saveOrSubmitReportA(status) {
-      // バリデーション
-      var reportDate = document.getElementById('A-date').value;
-      if (!reportDate) {
-        alert('日付は必須です。');
-        return;
-      }
-      
-      // 活動データが1件以上あるかチェック (typeが入力されているか)
-      var filledActivities = Object.values(currentActivities).filter(function(act) {
-        return act.type;
-      });
-      if (filledActivities.length === 0) {
-        alert('活動内容が1件も入力されていません。');
-        return;
-      }
-      
-      if (status === '申請中' && !confirm('「' + status + '」で送信します。よろしいですか？\n※申請後は編集できなくなります。')) {
-        return;
-      }
-      
-      showLoading(true, status + '処理を実行中...');
-      
-      // 走行距離
-      var mileage = parseFloat(document.getElementById('A-mileageDisplay').textContent) || 0;
-      
-      // 1. ヘッダーデータ
-      var headerData = {
-        reportId: document.getElementById('A-reportId').value,
-        date: reportDate,
-        remarks: document.getElementById('A-remarks').value,
-        startMeter: document.getElementById('A-startMeter').value,
-        endMeter: document.getElementById('A-endMeter').value,
-        mileage: mileage,
-        // TODO: privateKm をDBに保存する (仕様確認)
-        // v5 修正: 時間合計はGAS側 (saveOrSubmitDailyReport) で計算する
-      };
-
-      // 2. 行動明細データ (currentActivities を配列に変換)
-      // { "07:00": { type: "移動", content: "" } } -> [ { id: "07:00", startTime: "07:00", endTime: "07:30", type: "移動", content: "" } ]
-      var activityData = [];
-      TIME_SLOTS.forEach(function(startTime, index) {
-        if (index < TIME_SLOTS.length - 1 && currentActivities[startTime] && currentActivities[startTime].type) {
-          activityData.push({
-            id: startTime,
-            startTime: startTime,
-            endTime: TIME_SLOTS[index + 1],
-            type: currentActivities[startTime].type,
-            content: currentActivities[startTime].content || ''
-          });
-        }
-      });
-      
-      // 3. 経費明細データ (currentExpenses はそのまま)
-      // (v5: timeSlot も含まれた状態でGASに送られる)
-      
-      var reportData = {
-        header: headerData,
-        activities: activityData,
-        expenses: currentExpenses
-      };
-      
-      // console.log("Submitting data:", reportData);
-
-      google.script.run
-        .withSuccessHandler(function(result) {
-          showLoading(false);
-          // v5 修正: result.status で成否判定
-          if (result.status === 'success') {
-            alert(result.message);
-            // 成功したらフォームをリセットし、一覧に遷移
-            resetFormA();
-            showView('view-E-my-reports');
-          } else {
-            onApiError(result.message);
-          }
-        })
-        .withFailureHandler(onApiError)
-        .saveOrSubmitDailyReport(reportData, status);
-    }
-
-
-    // --- (B) 承認待ち一覧機能 -------------------------------------------
-
-    /**
-     * (B) 承認待ち一覧をロード
-     */
-    function loadPendingReportsB() {
-      showLoading(true, '承認待ち一覧を取得中...');
-      google.script.run
-        .withSuccessHandler(onLoadPendingReportsSuccessB)
-        .withFailureHandler(onApiError)
-        .getPendingReports();
-    }
-
-    /**
-     * (B) 承認待ち一覧 取得成功
-     * @param {Array<object>} reports
-     */
-    function onLoadPendingReportsSuccessB(reports) {
-      showLoading(false);
-      var listBody = document.getElementById('B-approval-list-body');
-      var badge = document.getElementById('approval-count-badge');
-      listBody.innerHTML = '';
-      
-      if (!reports || reports.length === 0) {
-        listBody.innerHTML = '<div class="list-group-item">承認待ちの日報はありません。</div>';
-        badge.textContent = '';
-        return;
-      }
-
-      badge.textContent = reports.length;
-      
-      // 日付でソート (昇順)
-      reports.sort(function(a, b) {
-        return a['日付'].localeCompare(b['日付']);
-      });
-
-      reports.forEach(function(report) {
-        var date = new Date(report['日付']);
-        var formattedDate = !isNaN(date.getTime()) ? date.toLocaleDateString('ja-JP', { weekday: 'short' }) : '日付不明';
-        var dateStr = report['日付'].split('T')[0];
-        
-        var item = document.createElement('a');
-        item.href = '#';
-        item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center report-list-item';
-        item.onclick = function(e) {
-          e.preventDefault();
-          loadReportDetailsC(report['日報ID'], 'view-B-approval-list');
-        };
-        
-        item.innerHTML = 
-          '<div>' +
-            '<h5 class="mb-1">' + dateStr + ' (' + formattedDate + ')</h5>' +
-            '<p class="mb-1">申請者: ' + (report['担当者'] || '不明') + '</p>' +
-            '<small>合計経費: ' + formatNumber(report['合計経費'] || 0) + ' 円</small>' +
-          '</div>' +
-          '<i class="bi bi-chevron-right h4"></i>';
-        listBody.appendChild(item);
-      });
-    }
-
-    // --- (C) 日報詳細機能 -----------------------------------------------
-
-    /**
-     * (C) 日報詳細をロード
-     * @param {string} reportId 日報ID
-     * @param {string} returnViewId 戻り先のビューID
-     */
-    function loadReportDetailsC(reportId, returnViewId) {
-      showLoading(true, '日報詳細を取得中...');
-      viewC_ReturnView = returnViewId; // 戻り先をセット
-      
-      google.script.run
-        .withSuccessHandler(onLoadReportDetailsSuccessC)
-        .withFailureHandler(onApiError)
-        .getReportDetails(reportId);
-    }
-    
-    /**
-     * (C) 日報詳細 取得成功 (v11 修正: データチェック強化)
-     * @param {object} data { header, activities, expenses }
-     */
-    function onLoadReportDetailsSuccessC(data) {
-      // v7 修正: ローディングを先に解除し、データチェック
-      showLoading(false); 
-      
-      // v11 修正: header に reportId があるかどうかもチェック
-      if (!data || !data.header || !data.header['日報ID']) {
-        console.error('onLoadReportDetailsSuccessC: Invalid data received.', data);
-        onApiError('詳細データの取得に失敗しました。データが不正か、対象が見つかりません。');
-        return;
-      }
-
-      var header = data.header;
-      var activities = data.activities;
-      var expenses = data.expenses;
-      
-      // 1. ヘッダー
-      document.getElementById('C-header-date').textContent = header['日付'] ? new Date(header['日付']).toLocaleDateString('ja-JP') : '日付なし';
-      document.getElementById('C-header-applicant').textContent = header['担当者'];
-      document.getElementById('C-header-apply-date').textContent = header['申請日'] ? new Date(header['申請日']).toLocaleString('ja-JP') : 'N/A';
-      document.getElementById('C-header-mileage').textContent = header['走行距離'] || 0;
-      document.getElementById('C-header-total-expense').textContent = formatNumber(header['合計経費'] || 0);
-      document.getElementById('C-header-remarks').textContent = header['備考'] || '(備考なし)';
-      
-      // v5 修正: 時間合計をセット (小数点2位まで)
-      document.getElementById('C-header-movement-time').textContent = formatHours(header['移動時間合計 (時間)']);
-      document.getElementById('C-header-meeting-time').textContent = formatHours(header['商談時間合計 (時間)']);
-      
-      // ステータスバッジ
-      var statusBadge = document.getElementById('C-header-status-badge');
-      statusBadge.textContent = header['承認ステータス'];
-      statusBadge.className = 'badge fs-6'; // reset
-      switch (header['承認ステータス']) {
-        case '申請中': statusBadge.classList.add('bg-primary'); break;
-        case '承認済': statusBadge.classList.add('bg-success'); break;
-        case '差戻し': statusBadge.classList.add('bg-danger'); break;
-        case '一時保存': statusBadge.classList.add('bg-warning', 'text-dark'); break;
-        case '精算申請済': statusBadge.classList.add('bg-info', 'text-dark'); break;
-        default: statusBadge.classList.add('bg-secondary');
-      }
-      
-      // 2. 行動明細
-      var actBody = document.getElementById('C-activities-body');
-      actBody.innerHTML = '';
-      if (activities.length > 0) {
-        // 時刻でソート
-        activities.sort(function(a, b) {
-          return a['開始時刻'].localeCompare(b['開始時刻']);
-        });
-        activities.forEach(function(act) {
-          actBody.innerHTML += 
-            '<tr>' +
-              '<td>' + act['開始時刻'] + ' - ' + act['終了時刻'] + '</td>' +
-              '<td>' + act['活動区分'] + '</td>' +
-              '<td>' + act['活動内容'] + '</td>' +
-            '</tr>';
-        });
-      } else {
-        actBody.innerHTML = '<tr><td colspan="3">行動明細はありません。</td></tr>';
-      }
-      
-      // 3. 経費明細
-      var expBody = document.getElementById('C-expenses-body');
-      expBody.innerHTML = '';
-      if (expenses.length > 0) {
-        expenses.forEach(function(ex) {
-          var useDate = ex['利用日'] ? new Date(ex['利用日']).toLocaleDateString('ja-JP') : 'N/A';
-          var url = ex['領収書URL'];
-          var urlLink = url ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i></a>' : '';
-          
-          expBody.innerHTML += 
-            '<tr>' +
-              '<td>' + useDate + '</td>' +
-              '<td>' + (ex.itemName || '不明な項目') + '</td>' +
-              '<td>' + formatNumber(ex['金額'] || 0) + '</td>' +
-              '<td>' + ex['備考'] + '</td>' +
-              '<td>' + urlLink + '</td>' +
-            '</tr>';
-        });
-      } else {
-        expBody.innerHTML = '<tr><td colspan="5">経費明細はありません。</td></tr>';
-      }
-      
-      // 4. 承認ボタンの制御
-      var approvalButtons = document.getElementById('C-approval-buttons');
-      // 管理者 かつ ステータスが "申請中" かつ 戻り先が "承認待ち" の場合のみ表示
-      if (IS_MANAGER && header['承認ステータス'] === '申請中' && viewC_ReturnView === 'view-B-approval-list') {
-        document.getElementById('C-reportId').value = header['日報ID'];
-        approvalButtons.style.display = 'block';
-      } else {
-        approvalButtons.style.display = 'none';
-      }
-      
-      // (C)ビューに遷移
-      // showLoading(false); // v7: 先頭に移動
-      showView('view-C-report-detail');
-    }
-
-    /**
-     * (C) 承認処理
-     */
-    function handleApproveC() {
-      var reportId = document.getElementById('C-reportId').value;
-      if (!reportId || !confirm('この日報を「承認」します。よろしいですか？')) {
-        return;
-      }
-      showLoading(true, '承認処理中...');
-      google.script.run
-        .withSuccessHandler(function(result) {
-          showLoading(false);
-          alert(result.message);
-          // 承認待ち一覧 (B) に戻る
-          showView('view-B-approval-list');
-        })
-        .withFailureHandler(onApiError)
-        .approveReport(reportId);
-    }
-    
-    /**
-     * (C) 差戻し処理
-     */
-    function handleRejectC() {
-      var reportId = document.getElementById('C-reportId').value;
-      if (!reportId || !confirm('この日報を「差戻し」します。よろしいですか？')) {
-        return;
-      }
-      showLoading(true, '差戻し処理中...');
-      google.script.run
-        .withSuccessHandler(function(result) {
-          showLoading(false);
-          alert(result.message);
-          // 承認待ち一覧 (B) に戻る
-          showView('view-B-approval-list');
-        })
-        .withFailureHandler(onApiError)
-        .rejectReport(reportId);
-    }
-
-    // --- (D) 経費精算まとめ機能 ----------------------------------------
-
-    /**
-     * (D) 承認済みの経費一覧をロード
-     */
-    function loadApprovedExpensesD() {
-      showLoading(true, '精算可能な経費を取得中...');
-      google.script.run
-        .withSuccessHandler(onLoadApprovedExpensesSuccessD)
-        .withFailureHandler(onApiError)
-        .getApprovedExpenses();
-    }
-    
-    /**
-     * (D) 承認済み経費 取得成功
-     * @param {object} data { reports, expenses }
-     */
-    function onLoadApprovedExpensesSuccessD(data) {
-      showLoading(false);
-      var tbody = document.getElementById('D-expense-list-body');
-      tbody.innerHTML = '';
-      
-      // v5 修正: data.reports を使用
-      if (!data.reports || data.reports.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center">精算対象の「承認済」日報はありません。</td></tr>';
-        updateTotalSelectedAmountD();
-        return;
-      }
-      
-      // 経費項目を日報IDごとにまとめる (v5)
-      var expensesByReportId = {};
-      data.expenses.forEach(function(ex) {
-        if (!expensesByReportId[ex['日報ID']]) {
-          expensesByReportId[ex['日報ID']] = [];
-        }
-        expensesByReportId[ex['日報ID']].push(ex);
-      });
-
-      // 日付の昇順でソート
-      data.reports.sort(function(a, b) {
-        return a['日付'].localeCompare(b['日付']);
-      });
-
-      data.reports.forEach(function(report) {
-        var tr = document.createElement('tr');
-        var reportId = report['日報ID'];
-        var totalExpense = parseFloat(report['合計経費']) || 0;
-        var date = new Date(report['日付']).toLocaleDateString('ja-JP');
-        
-        // 経費詳細の文字列 (v5)
-        var reportExpenses = expensesByReportId[reportId] || [];
-        var expenseDetails = reportExpenses.map(function(ex) {
-          return ex.itemName + ': ' + formatNumber(ex['金額']) + '円';
-        }).join('<br>');
-        
-        tr.innerHTML = 
-          '<td>' +
-            '<input class="form-check-input D-checkbox" type="checkbox" ' +
-                     'value="' + reportId + '" ' +
-                     'data-amount="' + totalExpense + '" ' +
-                     'onchange="updateTotalSelectedAmountD()">' +
-          '</td>' +
-          '<td>' + date + '</td>' +
-          '<td>' + formatNumber(totalExpense) + '</td>' +
-          '<td><small>' + (expenseDetails || '(経費なし)') + '</small></td>' +
-          '<td><small>' + String(reportId).substring(0, 8) + '...</small></td>'; // v5: reportId が数値の場合も考慮
-        tbody.appendChild(tr);
-      });
-      
-      updateTotalSelectedAmountD();
-    }
-
-    /**
-     * (D) チェックボックス全選択/全解除
-     */
-    function toggleAllCheckboxesD(checked) {
-      document.querySelectorAll('.D-checkbox').forEach(function(cb) {
-        cb.checked = checked;
-      });
-      updateTotalSelectedAmountD();
-    }
-    
-    /**
-     * (D) 選択合計金額を更新
-     */
-    function updateTotalSelectedAmountD() {
-      var total = 0;
-      document.querySelectorAll('.D-checkbox:checked').forEach(function(cb) {
-        total += parseFloat(cb.dataset.amount) || 0;
-      });
-      document.getElementById('D-total-selected-amount').textContent = formatNumber(total) + ' 円';
-    }
-    
-    /**
-     * (D) 最終精算申請を送信
-     */
-    function submitFinalExpensesD() {
-      var selectedIds = [];
-      document.querySelectorAll('.D-checkbox:checked').forEach(function(cb) {
-        selectedIds.push(cb.value);
-      });
-      
-      if (selectedIds.length === 0) {
-        alert('精算申請する日報を選択してください。');
-        return;
-      }
-      
-      if (!confirm('選択した ' + selectedIds.length + ' 件の日報を経理に精算申請します。\nよろしいですか？')) {
-        return;
-      }
-      
-      showLoading(true, '精算申請を送信中...');
-      google.script.run
-        .withSuccessHandler(function(result) {
-          showLoading(false);
-          alert(result.message);
-          // 成功したら一覧をリロード
-          loadApprovedExpensesD();
-        })
-        .withFailureHandler(onApiError)
-        .submitFinalExpenses(selectedIds);
-    }
-
-    // --- (E) 日報一覧機能 ----------------------------------------------
-
-    /**
-     * (E) 自分の日報一覧をロード (タイムアウト対策版)
-     */
-    function loadMyReportsE() {
-      showLoading(true, '日報一覧を取得中...');
-      google.script.run
-        .withSuccessHandler(onLoadMyReportsSuccessE)
-        .withFailureHandler(onApiError)
-        .getMyReports();
-    }
-
-    /**
-     * (E) 日報一覧 取得成功
-     * @param {Array<object>} reports
-     */
-    function onLoadMyReportsSuccessE(reports) {
-      showLoading(false);
-      var tbody = document.getElementById('E-my-reports-list-body');
-      tbody.innerHTML = '';
-
-      if (!reports || reports.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center">日報データはありません。</td></tr>';
-        return;
-      }
-      
-      reports.forEach(function(report) {
-        var tr = document.createElement('tr');
-        var rId = report['日報ID']; // v5: report.reportId -> report['日報ID']
-        var status = report['承認ステータス']; // v5: report.status -> report['承認ステータス']
-        
-        var statusBadge = '';
-        switch (status) {
-          case '申請中': statusBadge = '<span class="badge bg-primary">申請中</span>'; break;
-          case '承認済': statusBadge = '<span class="badge bg-success">承認済</span>'; break;
-          case '差戻し': statusBadge = '<span class="badge bg-danger">差戻し</span>'; break;
-          case '一時保存': statusBadge = '<span class="badge bg-warning text-dark">一時保存</span>'; break;
-          case '精算申請済': statusBadge = '<span class="badge bg-info text-dark">精算申請済</span>'; break;
-          default: statusBadge = '<span class="badge bg-secondary">' + status + '</span>';
-        }
-
-        // 編集/表示ボタンの出し分け
-        var buttons = '';
-        if (status === '一時保存' || status === '差戻し') {
-          // 編集可能
-          buttons = '<button class="btn btn-sm btn-primary" onclick="handleEditReportE(\'' + rId + '\')"><i class="bi bi-pencil"></i> 編集</button>';
-        } else {
-          // 表示のみ
-          buttons = '<button class="btn btn-sm btn-outline-secondary" onclick="loadReportDetailsC(\'' + rId + '\', \'view-E-my-reports\')"><i class="bi bi-eye"></i> 表示</button>';
-        }
-        
-        tr.innerHTML = 
-          '<td>' + report['日付'] + '</td>' + // v5: report.date -> report['日付']
-          '<td>' + statusBadge + '</td>' +
-          '<td>' + formatNumber(report['合計経費']) + '</td>' + // v5: report.totalExpense -> report['合計経費']
-          '<td><small>' + (report['備考'] || '') + '</small></td>' + // v5: report.remarks -> report['備考']
-          '<td>' + buttons + '</td>';
-        
-        // 編集ボタン以外がクリックされたら詳細表示 (イベント伝播停止)
-        tr.addEventListener('click', function(e) {
-          if (!e.target.closest('button')) {
-            loadReportDetailsC(rId, 'view-E-my-reports');
-          }
-        });
-        
-        tbody.appendChild(tr);
-      });
-    }
-    
-    /**
-     * (E) 編集ボタンクリック時の処理
-     * @param {string} reportId
-     */
-    function handleEditReportE(reportId) {
-      if (!confirm('この日報データを編集します。入力中の内容は破棄されますが、よろしいですか？')) {
-        return;
-      }
-      
-      showLoading(true, '編集データを読み込み中...');
-      google.script.run
-        .withSuccessHandler(onLoadReportForEditSuccessA)
-        .withFailureHandler(onApiError)
-        .getReportDataForEdit(reportId);
-    }
-    
-    /**
-     * (A) 編集データの読み込み成功 (E -> A) (v7 修正: 堅牢性向上)
-     * @param {object} result { status, data, message }
-     */
-    function onLoadReportForEditSuccessA(result) {
-      showLoading(false);
-
-      // v7 修正: サーバー側で権限チェックやステータスチェックが行われる
-      if (result && result.status === 'success' && result.data && result.data.header && result.data.header['日報ID']) {
-        var data = result.data;
-        
-        // 1. フォーム(A)をリセット
-        resetFormA();
-        
-        // 2. ヘッダー情報をセット
-        var h = data.header;
-        document.getElementById('A-reportId').value = h['日報ID'];
-        document.getElementById('A-date').value = h['日付'];
-        document.getElementById('A-remarks').value = h['備考'];
-        document.getElementById('A-startMeter').value = h['始時メーター'];
-        document.getElementById('A-endMeter').value = h['終時メーター'];
-        // TODO: 私有走行(privateKm) の復元 (仕様による)
-        
-        // 走行距離を再計算
-        calculateMileageA();
-        
-        // 3. 活動内容 (activities) をグローバル変数にセット
-        // (GAS側で { "07:00": { ... } } 形式に変換済み)
-        currentActivities = data.activities || {};
-        
-        // 4. 経費 (expenses) をグローバル変数にセット
-        // (v5: GAS側で timeSlot が復元されるようになった)
-        currentExpenses = data.expenses || [];
-
-        // 5. タイムシートを描画 (activities を復元)
-        renderTimesheetA();
-        
-        // 6. 経費バッジを更新
-        updateAllExpenseBadgesA();
-
-        // 7. (A)画面に遷移
-        showView('view-A-daily-report');
-
-      } else {
-        // 失敗
-        var errorMsg = (result && result.message) ? result.message : '編集データの読み込みに失敗しました。';
-        console.error('onLoadReportForEditSuccessA: Failed to load data.', result);
-        onApiError(errorMsg);
-      }
-    }
-
-  </script>
+    </script>
 </body>
 </html>
