@@ -872,7 +872,7 @@ function calculateActivityTotals_(activities) {
 
 
 /**
- * 汎用: シートデータをオブジェクト配列に変換 (v12 修正: 日付型をすべて文字列化)
+ * 汎用: シートデータをオブジェクト配列に変換 (v9 修正: カラム数チェック)
  * @param {string} sheetName
  * @param {SpreadsheetApp.Spreadsheet} ss (オプション)
  * @returns {Array}
@@ -905,26 +905,26 @@ function getSheetData_(sheetName, ss) {
   var result = data.map(function(row) {
     var obj = {};
     headers.forEach(function(header, index) {
-      
-      // v12 修正: 日付オブジェクト (Date) はすべて文字列に変換する
+      // v5 修正: 日付型を "yyyy-MM-dd" 形式の文字列に変換 (タイムゾーン考慮)
       if (row[index] instanceof Date) {
         try {
-          var date = row[index];
-          // 時刻 (00:00:00) のみかどうかを判定
-          if (date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0) {
-             // 日付のみ
-             obj[header] = Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+          // '日報' または '経費明細' の '日付'/'利用日' 
+          if ((sheetName === SHEET_NAMES.HEADER && header === '日付') || 
+              (sheetName === SHEET_NAMES.EXPENSES && header === '利用日')) {
+             obj[header] = Utilities.formatDate(row[index], Session.getScriptTimeZone(), 'yyyy-MM-dd');
           } else {
-             // 日付 + 時刻
-             obj[header] = Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+             // 申請日などはそのまま
+             obj[header] = row[index];
           }
         } catch(e) {
-           obj[header] = row[index].toString(); // 変換失敗時は toString()
+           obj[header] = row[index]; // 変換失敗時はそのまま
         }
       } else {
         obj[header] = row[index];
       }
       
+      // 空のプロパティはキー自体を含めない (v5 変更: 空文字列は保持)
+      // if (obj[header] === '') delete obj[header]; 
     });
     return obj;
   });
