@@ -10,6 +10,7 @@ const mailSheet = ss.getSheetByName('メールマスタ'); // ◀◀◀ 修正 (
 const HEADER = ['管理番号', '物品名', 'カテゴリ', 'ステータス', '貸与者', '現場名', '貸出日', '返却予定日', '校正日・入替日', '備考'];
 // ▼▼▼ 修正 ▼▼▼ J列（インデックス9）に '通知先アドレス' を追加
 const HISTORY_HEADER = ['履歴ID', '管理番号', '物品名', '処理', '貸与者', '現場名', '貸与日', '返却予定日', '実返却日', '通知先アドレス'];
+const JST = "Asia/Tokyo"; // ▼▼▼ 修正: タイムゾーンを定数化 ▼▼▼
 
 // ----------------------------------------------------------------
 // Webページ表示
@@ -27,26 +28,38 @@ function doGet(e) {
 function getInitialData() {
     try {
         const itemValues = itemSheet.getLastRow() > 1 ? itemSheet.getRange(2, 1, itemSheet.getLastRow() - 1, HEADER.length).getValues() : [];
+        
+        // --- ▼▼▼ デバッグログ (Logger.log) を追加 ▼▼▼ ---
+        // getInitialData が実行されたことを確認
+        Logger.log(`--- getInitialData が実行されました ---`);
+        if (itemValues.length > 0) {
+            // 物品マスタから読み取った1行目の「生」データを表示
+            // JSON.stringifyで配列の内容を文字列としてログに出力
+            Logger.log(`itemValues[0] (物品マスタの1行目): ${JSON.stringify(itemValues[0])}`);
+            Logger.log(`物品マスタの1行目[6] (貸出日のはず): ${itemValues[0][6]}`);
+        } else {
+            Logger.log(`itemValues は空です。`);
+        }
+        // --- ▲▲▲ デバッグログを追加 ▲▲▲ ---
+
         const rentalValues = rentalSheet.getLastRow() > 1 ? rentalSheet.getRange(2, 1, rentalSheet.getLastRow() - 1, HISTORY_HEADER.length).getValues() : [];
 
+        // ▼▼▼ 修正 (Req 3: 管理番号順に並び替え) ▼▼▼
         itemValues.sort((a, b) => {
-            const categoryA = a[2] || '';
-            const categoryB = b[2] || '';
-            const nameA = a[1] || '';
-            const nameB = b[1] || '';
-            if (categoryA < categoryB) return -1;
-            if (categoryA > categoryB) return 1;
-            if (nameA < nameB) return -1;
-            if (nameA > nameB) return 1;
-            return 0;
+            const idA = a[0] || ''; // [0]は管理番号
+            const idB = b[0] || '';
+            // localeCompareで文字・数値が混在していても自然にソート
+            return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
         });
+        // ▲▲▲ 修正ここまで ▲▲▲
 
         const items = itemValues.map(row => formatRowAsObject(row, HEADER));
         const rentals = rentalValues.map(row => formatRowAsObject(row, HISTORY_HEADER));
 
         return { items: items, rentals: rentals };
     } catch(e) {
-        console.error("getInitialData Error: " + e.message + e.stack);
+        // console.error -> Logger.log に変更
+        Logger.log("getInitialData Error: " + e.message + e.stack);
         return { items: [], rentals: [] };
     }
 }
@@ -69,8 +82,8 @@ function getItemScheduleInfo(itemId) {
         const nextReservationStartDate = normalizeDate(nextReservation[6]);
         const latestReturnDate = new Date(nextReservationStartDate.getTime());
         latestReturnDate.setDate(latestReturnDate.getDate() - 1);
-        constraints.latestReturnDate = Utilities.formatDate(latestReturnDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-        constraints.message = `注意: この物品は${Utilities.formatDate(nextReservationStartDate, 'JST', 'M月d日')}から予約が入っています。`;
+        constraints.latestReturnDate = Utilities.formatDate(latestReturnDate, JST, 'yyyy-MM-dd');
+        constraints.message = `注意: この物品は${Utilities.formatDate(nextReservationStartDate, JST, 'M月d日')}から予約が入っています。`;
     }
 
     const schedule = futureEvents.map(event => {
@@ -78,8 +91,8 @@ function getItemScheduleInfo(itemId) {
             type: event[3], // '貸出' or '予約'
             borrower: event[4],
             siteName: event[5] || '',
-            startDate: Utilities.formatDate(normalizeDate(event[6]), Session.getScriptTimeZone(), 'yyyy/MM/dd'),
-            endDate: Utilities.formatDate(normalizeDate(event[7]), Session.getScriptTimeZone(), 'yyyy/MM/dd'),
+            startDate: Utilities.formatDate(normalizeDate(event[6]), JST, 'yyyy/MM/dd'),
+            endDate: Utilities.formatDate(normalizeDate(event[7]), JST, 'yyyy/MM/dd'),
         }
     });
 
@@ -119,7 +132,7 @@ function getEditableSchedulesForItem(itemId) {
                 email: history.通知先アドレス || '' // ▼▼▼ 修正 ▼▼▼ email を追加
             };
         })
-        .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+        .sort((a,b) => normalizeDate(a[6]) - normalizeDate(b[6])); // sort用にnormalizeDate(a[6])を呼び出す
     
     return schedules;
 }
@@ -156,7 +169,7 @@ function addItem(itemData) {
         
         return { success: true, message: '新しい物品を登録しました。', shouldReload: true };
     } catch (e) { 
-        console.error('Error in addItem: ' + e.message + e.stack); 
+        Logger.log('Error in addItem: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: '登録に失敗しました: ' + e.message }; 
     } finally {
         lock.releaseLock();
@@ -209,7 +222,7 @@ function updateItem(itemData) {
         
         return { success: true, message: '物品情報を更新しました。', shouldReload: true };
     } catch (e) { 
-        console.error('Error in updateItem: ' + e.message + e.stack); 
+        Logger.log('Error in updateItem: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: '更新に失敗しました: ' + e.message }; 
     } finally {
         lock.releaseLock();
@@ -232,7 +245,7 @@ function deleteItem(itemId) {
         itemSheet.deleteRow(itemRow);
         return { success: true, message: '物品を削除しました。', shouldReload: true };
     } catch (e) { 
-        console.error('Error in deleteItem: ' + e.message + e.stack); 
+        Logger.log('Error in deleteItem: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: `削除に失敗しました: ${e.message}` }; 
     } finally {
         lock.releaseLock();
@@ -246,21 +259,28 @@ function lendItem(data) {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
-        // ▼▼▼ 修正: data から email を受け取り、現場名と貸与者の必須チェックを追加 ▼▼▼
+        // ▼▼▼ 修正: data から email を受け取り、貸与者の必須チェック ▼▼▼
         const { itemId, borrower, siteName, startDate, returnDate, email } = data;
         if (!borrower) throw new Error('貸与者が入力されていません。');
-        if (!siteName) throw new Error('現場名が入力されていません。');
+        // if (!siteName) throw new Error('現場名が入力されていません。'); // <-- ▼▼▼ 修正 (Req 4: 必須チェックを条件付きに変更)
         // ▲▲▲ 修正ここまで ▲▲▲
 
         const itemRow = findRowById(itemSheet, itemId);
         if (itemRow === -1) throw new Error('対象の物品が見つかりません。');
 
+        // ▼▼▼ 修正 (Req 4: 通信機器のみ現場名必須) ▼▼▼
+        const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+        if (itemCategory === '通信機器' && !siteName) {
+            throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
+        }
+        // ▲▲▲ 修正ここまで ▲▲▲
+
         const itemDataValues = itemSheet.getRange(itemRow, 1, 1, HEADER.length).getValues()[0];
         const maintenanceDate = itemDataValues[HEADER.indexOf('校正日・入替日')];
-        if (maintenanceDate instanceof Date) {
+        if (maintenanceDate instanceof Date) { // スプレッドシートから読み取った日付はDateオブジェクト
             const today = normalizeDate(new Date());
             if (normalizeDate(maintenanceDate) < today) {
-                throw new Error(`この物品は校正・入替期限(${Utilities.formatDate(maintenanceDate, Session.getScriptTimeZone(), 'yyyy/MM/dd')})を過ぎているため、貸し出せません。`);
+                throw new Error(`この物品は校正・入替期限(${Utilities.formatDate(maintenanceDate, JST, 'yyyy/MM/dd')})を過ぎているため、貸し出せません。`);
             }
         }
         
@@ -290,8 +310,8 @@ function lendItem(data) {
 物品名: ${itemName} (管理番号: ${itemId})
 貸与者: ${borrower}
 現場名: ${siteName || 'N/A'}
-貸出日: ${Utilities.formatDate(normalizeDate(startDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
-返却予定日: ${Utilities.formatDate(normalizeDate(returnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
+貸出日: ${Utilities.formatDate(normalizeDate(startDate), JST, 'yyyy/MM/dd')}
+返却予定日: ${Utilities.formatDate(normalizeDate(returnDate), JST, 'yyyy/MM/dd')}
 
 ---
 貸与品管理アプリ`;
@@ -303,7 +323,7 @@ function lendItem(data) {
 
         return { success: true, message: '貸出処理が完了しました。', shouldReload: true };
     } catch (e) { 
-        console.error('Error in lendItem: ' + e.message + e.stack); 
+        Logger.log('Error in lendItem: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: `貸出処理に失敗しました: ${e.message}` }; 
     } finally {
         lock.releaseLock();
@@ -350,8 +370,8 @@ function returnItem(historyId) {
 物品名: ${itemName} (管理番号: ${itemId})
 貸与者: ${borrower}
 現場名: ${siteName || 'N/A'}
-貸出日: ${Utilities.formatDate(normalizeDate(startDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
-実返却日: ${Utilities.formatDate(normalizeDate(returnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
+貸出日: ${Utilities.formatDate(normalizeDate(startDate), JST, 'yyyy/MM/dd')}
+実返却日: ${Utilities.formatDate(normalizeDate(returnDate), JST, 'yyyy/MM/dd')}
 
 ---
 貸与品管理アプリ`;
@@ -362,7 +382,7 @@ function returnItem(historyId) {
 
         return { success: true, message: '返却処理が完了しました。', shouldReload: true };
     } catch (e) { 
-        console.error('Error in returnItem: ' + e.message + e.stack); 
+        Logger.log('Error in returnItem: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: '返却処理に失敗しました: ' + e.message }; 
     } finally {
         lock.releaseLock();
@@ -377,21 +397,28 @@ function updateRentalPeriod(data) {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
-        // ▼▼▼ 修正: data から email を受け取り、現場名と貸与者の必須チェックを追加 ▼▼▼
+        // ▼▼▼ 修正: data から email を受け取り、貸与者の必須チェック ▼▼▼
         const { itemId, borrower, siteName, newStartDate, newReturnDate, email } = data;
         if (!borrower) throw new Error('貸与者が入力されていません。');
-        if (!siteName) throw new Error('現場名が入力されていません。');
+        // if (!siteName) throw new Error('現場名が入力されていません。'); // <-- ▼▼▼ 修正 (Req 4: 必須チェックを条件付きに変更)
         // ▲▲▲ 修正ここまで ▲▲▲
 
         const itemRow = findRowById(itemSheet, itemId);
         if (itemRow === -1) throw new Error('対象の物品が見つかりません。');
+
+        // ▼▼▼ 修正 (Req 4: 通信機器のみ現場名必須) ▼▼▼
+        const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+        if (itemCategory === '通信機器' && !siteName) {
+            throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
+        }
+        // ▲▲▲ 修正ここまで ▲▲▲
 
         // 校正日チェック
         const itemDataValues = itemSheet.getRange(itemRow, 1, 1, HEADER.length).getValues()[0];
         const maintenanceDate = itemDataValues[HEADER.indexOf('校正日・入替日')];
         if (maintenanceDate instanceof Date) {
             if (normalizeDate(newReturnDate) > normalizeDate(maintenanceDate)) {
-                throw new Error(`返却日は校正・入替期限(${Utilities.formatDate(maintenanceDate, Session.getScriptTimeZone(), 'yyyy/MM/dd')})を超えることはできません。`);
+                throw new Error(`返却日は校正・入替期限(${Utilities.formatDate(maintenanceDate, JST, 'yyyy/MM/dd')})を超えることはできません。`);
             }
         }
 
@@ -414,8 +441,8 @@ function updateRentalPeriod(data) {
         itemSheet.getRange(itemRow, HEADER.indexOf('貸与者') + 1).setValue(borrower);
         itemSheet.getRange(itemRow, HEADER.indexOf('現場名') + 1).setValue(siteName);
         // ▼▼▼ 修正: 日付型の値を日付文字列に変換して保存（index.htmlでの表示を確実にするため） ▼▼▼
-        itemSheet.getRange(itemRow, HEADER.indexOf('貸出日') + 1).setValue(Utilities.formatDate(normalizeDate(newStartDate), Session.getScriptTimeZone(), 'yyyy/MM/dd'));
-        itemSheet.getRange(itemRow, HEADER.indexOf('返却予定日') + 1).setValue(Utilities.formatDate(normalizeDate(newReturnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd'));
+        itemSheet.getRange(itemRow, HEADER.indexOf('貸出日') + 1).setValue(Utilities.formatDate(normalizeDate(newStartDate), JST, 'yyyy/MM/dd'));
+        itemSheet.getRange(itemRow, HEADER.indexOf('返却予定日') + 1).setValue(Utilities.formatDate(normalizeDate(newReturnDate), JST, 'yyyy/MM/dd'));
         // ▲▲▲ 修正ここまで ▲▲▲
         
         // 貸出履歴(rentalSheet)の更新 (historyRowIndex は 0-based なので、Range指定は +1 する)
@@ -436,8 +463,8 @@ function updateRentalPeriod(data) {
 物品名: ${itemName} (管理番号: ${itemId})
 貸与者: ${borrower}
 現場名: ${siteName || 'N/A'}
-新しい貸出日: ${Utilities.formatDate(normalizeDate(newStartDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
-新しい返却予定日: ${Utilities.formatDate(normalizeDate(newReturnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
+新しい貸出日: ${Utilities.formatDate(normalizeDate(newStartDate), JST, 'yyyy/MM/dd')}
+新しい返却予定日: ${Utilities.formatDate(normalizeDate(newReturnDate), JST, 'yyyy/MM/dd')}
 
 ---
 貸与品管理アプリ`;
@@ -448,7 +475,7 @@ function updateRentalPeriod(data) {
 
         return { success: true, message: '貸出内容を更新しました。', shouldReload: true };
     } catch (e) {
-        console.error('Error in updateRentalPeriod: ' + e.message + e.stack);
+        Logger.log('Error in updateRentalPeriod: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: `貸出内容の更新に失敗しました: ${e.message}` };
     } finally {
         lock.releaseLock();
@@ -459,25 +486,32 @@ function addReservation(data) {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
-        // ▼▼▼ 修正: data から email を受け取り、現場名と予約者の必須チェックを追加 ▼▼▼
+        // ▼▼▼ 修正: data から email を受け取り、予約者の必須チェック ▼▼▼
         const { itemId, borrower, siteName, startDate, returnDate, email } = data;
         if (!borrower) throw new Error('予約者が入力されていません。');
-        if (!siteName) throw new Error('現場名が入力されていません。');
+        // if (!siteName) throw new Error('現場名が入力されていません。'); // <-- ▼▼▼ 修正 (Req 4: 必須チェックを条件付きに変更)
         // ▲▲▲ 修正ここまで ▲▲▲
 
         const itemRow = findRowById(itemSheet, itemId);
         if (itemRow === -1) throw new Error('対象の物品が見つかりません。');
         
+        // ▼▼▼ 修正 (Req 4: 通信機器のみ現場名必須) ▼▼▼
+        const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+        if (itemCategory === '通信機器' && !siteName) {
+            throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
+        }
+        // ▲▲▲ 修正ここまで ▲▲▲
+
         const itemDataValues = itemSheet.getRange(itemRow, 1, 1, HEADER.length).getValues()[0];
         const maintenanceDate = itemDataValues[HEADER.indexOf('校正日・入替日')];
         if (maintenanceDate instanceof Date) {
             const today = normalizeDate(new Date());
             // 予約の終了日が校正日を過ぎていたらNG（貸出とロジックを合わせる）
             if (normalizeDate(returnDate) > normalizeDate(maintenanceDate)) {
-                throw new Error(`予約終了日は校正・入替期限(${Utilities.formatDate(maintenanceDate, Session.getScriptTimeZone(), 'yyyy/MM/dd')})を超えることはできません。`);
+                throw new Error(`予約終了日は校正・入替期限(${Utilities.formatDate(maintenanceDate, JST, 'yyyy/MM/dd')})を超えることはできません。`);
             }
             if (normalizeDate(maintenanceDate) < today) {
-                throw new Error(`この物品は校正・入替期限(${Utilities.formatDate(maintenanceDate, Session.getScriptTimeZone(), 'yyyy/MM/dd')})を過ぎているため、予約できません。`);
+                throw new Error(`この物品は校正・入替期限(${Utilities.formatDate(maintenanceDate, JST, 'yyyy/MM/dd')})を過ぎているため、予約できません。`);
             }
         }
 
@@ -502,8 +536,8 @@ function addReservation(data) {
 物品名: ${itemName} (管理番号: ${itemId})
 予約者: ${borrower}
 現場名: ${siteName || 'N/A'}
-予約開始日: ${Utilities.formatDate(normalizeDate(startDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
-予約終了日: ${Utilities.formatDate(normalizeDate(returnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
+予約開始日: ${Utilities.formatDate(normalizeDate(startDate), JST, 'yyyy/MM/dd')}
+予約終了日: ${Utilities.formatDate(normalizeDate(returnDate), JST, 'yyyy/MM/dd')}
 
 ---
 貸与品管理アプリ`;
@@ -514,7 +548,7 @@ function addReservation(data) {
 
         return { success: true, message: '予約を受け付けました。', shouldReload: true };
     } catch (e) {
-        console.error('Error in addReservation: ' + e.message + e.stack);
+        Logger.log('Error in addReservation: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: `予約に失敗しました: ${e.message}` };
     } finally {
         lock.releaseLock();
@@ -525,10 +559,10 @@ function updateReservation(data) {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
-        // ▼▼▼ 修正: data から email を受け取り、現場名と予約者の必須チェックを追加 ▼▼▼
+        // ▼▼▼ 修正: data から email を受け取り、予約者の必須チェック ▼▼▼
         const { historyId, borrower, siteName, newStartDate, newReturnDate, email } = data;
         if (!borrower) throw new Error('予約者が入力されていません。');
-        if (!siteName) throw new Error('現場名が入力されていません。');
+        // if (!siteName) throw new Error('現場名が入力されていません。'); // <-- ▼▼▼ 修正 (Req 4: 必須チェックを条件付きに変更)
         // ▲▲▲ 修正ここまで ▲▲▲
         
         const historyRow = findRowById(rentalSheet, historyId);
@@ -538,14 +572,23 @@ function updateReservation(data) {
         const historyValues = historyRange.getValues()[0];
         const itemId = historyValues[HISTORY_HEADER.indexOf('管理番号')];
 
-        // 校正日チェック
+        // 校正日チェック 兼 カテゴリチェック
         const itemRow = findRowById(itemSheet, itemId);
-        if (itemRow !== -1) {
+        if (itemRow === -1) throw new Error('対象の物品が見つかりません。'); // 物品マスタから削除されているケースを考慮
+
+        // ▼▼▼ 修正 (Req 4: 通信機器のみ現場名必須) ▼▼▼
+        const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+        if (itemCategory === '通信機器' && !siteName) {
+            throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
+        }
+        // ▲▲▲ 修正ここまで ▲▲▲
+
+        if (itemRow !== -1) { // 物品マスタに物品が存在する場合のみ校正日チェック
             const itemDataValues = itemSheet.getRange(itemRow, 1, 1, HEADER.length).getValues()[0];
             const maintenanceDate = itemDataValues[HEADER.indexOf('校正日・入替日')];
             if (maintenanceDate instanceof Date) {
                 if (normalizeDate(newReturnDate) > normalizeDate(maintenanceDate)) {
-                    throw new Error(`予約終了日は校正・入替期限(${Utilities.formatDate(maintenanceDate, Session.getScriptTimeZone(), 'yyyy/MM/dd')})を超えることはできません。`);
+                    throw new Error(`予約終了日は校正・入替期限(${Utilities.formatDate(maintenanceDate, JST, 'yyyy/MM/dd')})を超えることはできません。`);
                 }
             }
         }
@@ -574,8 +617,8 @@ function updateReservation(data) {
 物品名: ${itemName} (管理番号: ${itemId})
 予約者: ${borrower}
 現場名: ${siteName || 'N/A'}
-新しい予約開始日: ${Utilities.formatDate(normalizeDate(newStartDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
-新しい予約終了日: ${Utilities.formatDate(normalizeDate(newReturnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
+新しい予約開始日: ${Utilities.formatDate(normalizeDate(newStartDate), JST, 'yyyy/MM/dd')}
+新しい予約終了日: ${Utilities.formatDate(normalizeDate(newReturnDate), JST, 'yyyy/MM/dd')}
 
 ---
 貸与品管理アプリ`;
@@ -586,7 +629,7 @@ function updateReservation(data) {
         
         return { success: true, message: '予約内容を更新しました。', shouldReload: true };
     } catch (e) {
-        console.error('Error in updateReservation: ' + e.message + e.stack);
+        Logger.log('Error in updateReservation: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: `予約の更新に失敗しました: ${e.message}` };
     } finally {
         lock.releaseLock();
@@ -628,8 +671,8 @@ function cancelReservation(historyId) {
 物品名: ${itemName} (管理番号: ${itemId})
 予約者: ${borrower}
 現場名: ${siteName || 'N/A'}
-予約開始日: ${Utilities.formatDate(normalizeDate(startDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
-予約終了日: ${Utilities.formatDate(normalizeDate(returnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
+予約開始日: ${Utilities.formatDate(normalizeDate(startDate), JST, 'yyyy/MM/dd')}
+予約終了日: ${Utilities.formatDate(normalizeDate(returnDate), JST, 'yyyy/MM/dd')}
 
 ---
 貸与品管理アプリ`;
@@ -640,7 +683,7 @@ function cancelReservation(historyId) {
 
         return { success: true, message: '予約をキャンセルしました。', shouldReload: true };
     } catch(e) {
-        console.error('Error in cancelReservation: ' + e.message + e.stack);
+        Logger.log('Error in cancelReservation: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: `予約のキャンセルに失敗しました: ${e.message}` };
     } finally {
         lock.releaseLock();
@@ -665,7 +708,7 @@ function lendFromReservation(historyId) {
         const today = normalizeDate(new Date());
 
         if (startDate > today) {
-            throw new Error(`この予約は${Utilities.formatDate(startDate, 'JST', 'M月d日')}開始のため、まだ貸し出せません。`);
+            throw new Error(`この予約は${Utilities.formatDate(startDate, JST, 'M月d日')}開始のため、まだ貸し出せません。`);
         }
 
         historyValues[HISTORY_HEADER.indexOf('処理')] = '貸出';
@@ -692,8 +735,8 @@ function lendFromReservation(historyId) {
 物品名: ${itemName} (管理番号: ${itemId})
 貸与者: ${borrower}
 現場名: ${siteName || 'N/A'}
-貸出日: ${Utilities.formatDate(normalizeDate(startDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
-返却予定日: ${Utilities.formatDate(normalizeDate(returnDate), Session.getScriptTimeZone(), 'yyyy/MM/dd')}
+貸出日: ${Utilities.formatDate(normalizeDate(startDate), JST, 'yyyy/MM/dd')}
+返却予定日: ${Utilities.formatDate(normalizeDate(returnDate), JST, 'yyyy/MM/dd')}
 
 ---
 貸与品管理アプリ`;
@@ -704,7 +747,7 @@ function lendFromReservation(historyId) {
 
         return { success: true, message: '予約を貸出中に変更しました。', shouldReload: true };
     } catch(e) {
-        console.error('Error in lendFromReservation: ' + e.message + e.stack);
+        Logger.log('Error in lendFromReservation: ' + e.message + e.stack); // console.error -> Logger.log
         return { success: false, message: `貸出処理に失敗しました: ${e.message}` };
     } finally {
         lock.releaseLock();
@@ -722,7 +765,10 @@ function getItemsAsResources() {
             title: row[1],
             category: row[2]
         }));
-    } catch (e) { console.error('Error in getItemsAsResources: ' + e.message + e.stack); return []; }
+    } catch (e) { 
+        Logger.log('Error in getItemsAsResources: ' + e.message + e.stack); // console.error -> Logger.log
+        return []; 
+    }
 }
 
 function getCalendarEvents() {
@@ -747,8 +793,8 @@ function getCalendarEvents() {
             let eventData = {
                 id: history.履歴ID,
                 resourceId: history.管理番号,
-                start: Utilities.formatDate(startDate, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
-                end: Utilities.formatDate(endForCalendar, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+                start: Utilities.formatDate(startDate, JST, 'yyyy-MM-dd'),
+                end: Utilities.formatDate(endForCalendar, JST, 'yyyy-MM-dd'),
                 extendedProps: {
                     historyId: history.履歴ID,
                     itemId: history.管理番号, 
@@ -798,7 +844,7 @@ function getCalendarEvents() {
                 id: `maint_${item.管理番号}`,
                 resourceId: item.管理番号,
                 title: `校正/入替: ${item.物品名}`,
-                start: Utilities.formatDate(maintenanceDate, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+                start: Utilities.formatDate(maintenanceDate, JST, 'yyyy-MM-dd'),
                 allDay: true,
                 backgroundColor: '#6c757d',
                 borderColor: '#6c757d',
@@ -806,7 +852,7 @@ function getCalendarEvents() {
                     type: 'maintenance',
                     itemId: item.管理番号,
                     itemName: item.物品名,
-                    maintenanceDate: Utilities.formatDate(maintenanceDate, Session.getScriptTimeZone(), 'yyyy/MM/dd')
+                    maintenanceDate: Utilities.formatDate(maintenanceDate, JST, 'yyyy/MM/dd')
                 }
             };
         });
@@ -819,10 +865,10 @@ function getCalendarEvents() {
 // スケジュール設定
 // ----------------------------------------------------------------
 function processReservations() {
-    console.log("予約の自動貸出処理を開始します。");
+    Logger.log("予約の自動貸出処理を開始します。"); // console.log -> Logger.log
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(300000)) {
-        console.log("他のプロセスが実行中のため、スキップします。");
+        Logger.log("他のプロセスが実行中のため、スキップします。"); // console.log -> Logger.log
         return;
     }
 
@@ -830,7 +876,7 @@ function processReservations() {
         const today = normalizeDate(new Date());
 
         if (rentalSheet.getLastRow() < 2) {
-            console.log("処理対象の予約はありません。");
+            Logger.log("処理対象の予約はありません。"); // console.log -> Logger.log
             return;
         }
         const events = rentalSheet.getRange(2, 1, rentalSheet.getLastRow() - 1, HISTORY_HEADER.length).getValues();
@@ -846,19 +892,19 @@ function processReservations() {
                 if (itemRow !== -1) {
                     const itemStatus = itemSheet.getRange(itemRow, HEADER.indexOf('ステータス') + 1).getValue();
                     if (itemStatus === '予約あり') {
-                        console.log(`予約ID[${event[0]}]を自動で貸し出します。`);
+                        Logger.log(`予約ID[${event[0]}]を自動で貸し出します。`); // console.log -> Logger.log
                         rentalSheet.getRange(index + 2, HISTORY_HEADER.indexOf('処理') + 1).setValue('貸出');
                         SpreadsheetApp.flush();
                         updateItemStatus(itemId);
                     } else {
-                        console.log(`物品[${itemId}]が返却されていないため、予約ID[${event[0]}]の自動貸出をスキップしました。`);
+                        Logger.log(`物品[${itemId}]が返却されていないため、予約ID[${event[0]}]の自動貸出をスキップしました。`); // console.log -> Logger.log
                     }
                 }
             }
         });
-        console.log("予約の自動貸出処理が完了しました。");
+        Logger.log("予約の自動貸出処理が完了しました。"); // console.log -> Logger.log
     } catch (e) {
-        console.error("予約の自動貸出処理中にエラーが発生しました: ", e.message + e.stack);
+        Logger.log("予約の自動貸出処理中にエラーが発生しました: ", e.message + e.stack); // console.error -> Logger.log
     } finally {
         lock.releaseLock();
     }
@@ -896,10 +942,27 @@ function updateItemStatus(itemId) {
         itemValues[HEADER.indexOf('ステータス')] = '貸出中';
         itemValues[HEADER.indexOf('貸与者')] = activeRental[4];
         itemValues[HEADER.indexOf('現場名')] = activeRental[5];
-        // ▼▼▼ 修正: Dateオブジェクトを明示的に日付文字列（yyyy/MM/dd）に変換して保存する ▼▼▼
-        itemValues[HEADER.indexOf('貸出日')] = Utilities.formatDate(normalizeDate(activeRental[6]), Session.getScriptTimeZone(), 'yyyy/MM/dd');
-        itemValues[HEADER.indexOf('返却予定日')] = Utilities.formatDate(normalizeDate(activeRental[7]), Session.getScriptTimeZone(), 'yyyy/MM/dd');
+        
+        // ▼▼▼ 修正 ▼▼▼
+        // activeRental[6] (貸与日) は rentalSheet から読み取った JST 0時の Date オブジェクトのはず
+        const lendDate = activeRental[6];
+        const formattedLendDate = Utilities.formatDate(lendDate, JST, 'yyyy/MM/dd');
+        
+        // --- ▼▼▼ デバッグログを console.log から Logger.log に変更 ▼▼▼ ---
+        Logger.log(`--- updateItemStatus (Item: ${itemId}) ---`);
+        Logger.log(`activeRental[6] (貸与日 Raw): ${lendDate}`);
+        Logger.log(`Type of activeRental[6]: ${typeof lendDate}`);
+        if (lendDate instanceof Date) {
+            Logger.log(`activeRental[6] (isDate): true, Time: ${lendDate.getTime()}`);
+        }
+        Logger.log(`書き込む日付 (Formatted): ${formattedLendDate}`);
+        Logger.log(`-----------------------------------`);
+        // --- ▲▲▲ デバッグログを変更 ▲▲▲ ---
+        
+        itemValues[HEADER.indexOf('貸出日')] = formattedLendDate;
+        itemValues[HEADER.indexOf('返却予定日')] = Utilities.formatDate(activeRental[7], JST, 'yyyy/MM/dd');
         // ▲▲▲ 修正ここまで ▲▲▲
+
     } else {
         // 予約開始日(貸与日)が今日以降の予約を探す
         const upcomingReservation = allFutureEvents.find(e => 
@@ -925,7 +988,11 @@ function getFutureEventsForItem(itemId) {
         .filter(row => {
             const isTargetItem = row[1] == itemId;
             const isFutureEvent = ['貸出', '予約'].includes(row[3]);
-            const eventEndDate = normalizeDate(row[7]);
+            // ▼▼▼ 修正 ▼▼▼
+            // normalizeDateを通して比較することで、時刻やタイムゾーンの違いによる比較ミスを防ぐ
+            const eventStartDate = normalizeDate(row[6]); // 貸与日
+            const eventEndDate = normalizeDate(row[7]);   // 返却予定日
+            // ▲▲▲ 修正ここまで ▲▲▲
             return isTargetItem && isFutureEvent && eventEndDate >= today;
         })
         .sort((a,b) => normalizeDate(a[6]) - normalizeDate(b[6]));
@@ -944,7 +1011,7 @@ function checkAvailability(itemId, newStart, newEnd, isEditingLend = false, hist
         const eventEnd = normalizeDate(event[7]);
         
         if (normalizedStart <= eventEnd && normalizedEnd >= eventStart) {
-            const reason = `${event[3]}あり (${Utilities.formatDate(eventStart, 'JST', 'yyyy/MM/dd')} ~ ${Utilities.formatDate(eventEnd, 'JST', 'yyyy/MM/dd')})`;
+            const reason = `${event[3]}あり (${Utilities.formatDate(eventStart, JST, 'yyyy/MM/dd')} ~ ${Utilities.formatDate(eventEnd, JST, 'yyyy/MM/dd')})`;
             return { isAvailable: false, conflictReason: reason };
         }
     }
@@ -964,19 +1031,35 @@ function formatRowAsObject(rowArray, headerArray) {
     headerArray.forEach((key, index) => {
         const value = rowArray[index];
         
+        // --- ▼▼▼ デバッグログ (Logger.log) を追加 ▼▼▼ ---
+        // "貸出日" の処理を追跡
+        if (key === '貸出日') {
+            Logger.log(`--- formatRowAsObject (物品: ${rowArray[0]}) ---`);
+            Logger.log(`  Key: ${key}`);
+            Logger.log(`  Raw Value (value): ${value}`);
+            Logger.log(`  Type of Value: ${typeof value}`);
+        }
+        // --- ▲▲▲ デバッグログを追加 ▲▲▲ ---
+
         if (DATE_KEYS.includes(key)) {
-            if (value instanceof Date) {
+            // ▼▼▼ 修正 ▼▼▼
+            // normalizeDateを通してJSTのDateオブジェクトにした後、フォーマットする
+            const normalized = normalizeDate(value);
+
+            // --- ▼▼▼ デバッグログ (Logger.log) を追加 ▼▼▼ ---
+            if (key === '貸出日') {
+                Logger.log(`  Normalized Value: ${normalized}`);
+            }
+            // --- ▲▲▲ デバッグログを追加 ▲▲▲ ---
+
+            if (normalized) {
                 // Dateオブジェクトならyyyy/MM/dd形式に変換
-                item[key] = Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy/MM/dd');
-                
-            } else if (typeof value === 'string' && value.trim() !== '') {
-                // スプレッドシートが文字列として保存している場合（例: "2024/01/01"）はそのまま渡す
-                item[key] = value;
-            
+                item[key] = Utilities.formatDate(normalized, JST, 'yyyy/MM/dd');
             } else {
                 // null, undefined, 空文字列などの場合は空欄
                 item[key] = '';
             }
+            // ▲▲▲ 修正ここまで ▲▲▲
         } else {
             item[key] = value;
         }
@@ -985,19 +1068,54 @@ function formatRowAsObject(rowArray, headerArray) {
 }
 
 function getNextId(sheet) {
-    const lastRow = sheet.getLastRow();
+    const lastRow = rentalSheet.getLastRow();
     if (lastRow < 2) return 1;
-    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
+    const ids = rentalSheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
     const maxId = Math.max(0, ...ids.filter(id => !isNaN(id)).map(id => Number(id)));
     return isFinite(maxId) ? maxId + 1 : 1;
 }
 
+// ▼▼▼ 修正 (日付解釈の安定化) ▼▼▼
+/**
+ * タイムゾーンのズレを吸収し、JSTの0時0分0秒のDateオブジェクトを返す
+ * @param {Date | string | number} date - 変換対象の日付
+ * @return {Date | null} JSTの0時0分0秒に正規化されたDateオブジェクト
+ */
 function normalizeDate(date) {
     if (!date) return null;
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
+
+    try {
+        let d;
+        // 既にDateオブジェクトの場合
+        if (date instanceof Date) {
+            // JSTの「yyyy/MM/dd」文字列を一度取得する
+            const dateString = Utilities.formatDate(date, JST, 'yyyy/MM/dd');
+            d = new Date(dateString); // 'yyyy/MM/dd' 形式の文字列からDateを生成するとJST 0時になる
+        } 
+        // 文字列の場合 (yyyy-MM-dd や yyyy/MM/dd)
+        else if (typeof date === 'string') {
+            const dateString = date.split('T')[0].replace(/-/g, '/');
+            d = new Date(dateString); // 'yyyy/MM/dd' 形式の文字列からDateを生成するとJST 0時になる
+        } 
+        // 数値（タイムスタンプ）などの場合
+        else {
+            const tempDate = new Date(date);
+            const dateString = Utilities.formatDate(tempDate, JST, 'yyyy/MM/dd');
+            d = new Date(dateString); // JST 0時に正規化
+        }
+        
+        // 不正な日付でないかチェック
+        if (isNaN(d.getTime())) {
+            return null;
+        }
+
+        return d; // JSTの0時0分0秒のDateオブジェクト
+    } catch(e) {
+        Logger.log("normalizeDate Error: " + e.message + " (Input: " + date + ")"); // console.error -> Logger.log
+        return null;
+    }
 }
+// ▲▲▲ 修正ここまで ▲▲▲
 
 // ----------------------------------------------------------------
 // メール送信用ヘルパー関数
@@ -1011,7 +1129,7 @@ function normalizeDate(date) {
 function getMailMasterAddresses(mailType) {
     // mailSheet が存在しないか、定義されていない場合は警告を出し空配列を返す
     if (typeof mailSheet === 'undefined' || !mailSheet) {
-        console.warn("「メールマスタ」シートが見つからないか、スクリプト内で定義されていません。");
+        Logger.log("「メールマスタ」シートが見つからないか、スクリプト内で定義されていません。"); // console.warn -> Logger.log
         return [];
     }
     try {
@@ -1028,7 +1146,7 @@ function getMailMasterAddresses(mailType) {
 
         return [...new Set(addresses)]; // 重複を除外して返す
     } catch (e) {
-        console.error(`getMailMasterAddresses Error: ${e.message} ${e.stack}`);
+        Logger.log(`getMailMasterAddresses Error: ${e.message} ${e.stack}`); // console.error -> Logger.log
         return [];
     }
 }
@@ -1066,13 +1184,13 @@ function sendNotificationEmail(formEmail, subject, body) {
                 body: body,
                 // noReply: true // メールの差出人を「返信不可」にする場合は、このコメントアウトを解除
             });
-            console.log(`メール送信成功: ${recipientString}`);
+            Logger.log(`メール送信成功: ${recipientString}`); // console.log -> Logger.log
         } catch (e) {
-            console.error(`メール送信エラー: ${e.message} ${e.stack}`);
+            Logger.log(`メール送信エラー: ${e.message} ${e.stack}`); // console.error -> Logger.log
             // メール送信エラーは操作の成功/失敗に影響させない（ログに残すのみ）
         }
     } else {
-        console.log("通知先アドレスが指定されていないため、メールは送信されませんでした。");
+        Logger.log("通知先アドレスが指定されていないため、メールは送信されませんでした。"); // console.log -> Logger.log
     }
 }
 
@@ -1088,7 +1206,7 @@ function getItemNameById(itemId) {
         // HEADERの'物品名'のインデックス(1) + 1 = 2列目
         return itemSheet.getRange(itemRow, HEADER.indexOf('物品名') + 1).getValue();
     } catch (e) {
-        console.error(`getItemNameById Error: ${e.message}`);
+        Logger.log(`getItemNameById Error: ${e.message}`); // console.error -> Logger.log
         return `不明な物品(ID: ${itemId})`;
     }
 }
