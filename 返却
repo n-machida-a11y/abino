@@ -1,0 +1,111 @@
+// ----------------------------------------------------------------
+// 返却遅延アラート機能
+// ----------------------------------------------------------------
+
+/**
+ * 返却予定日を過ぎた貸出中の物品をチェックし、通知メールを送信します。
+ * この関数を毎日午前8時に実行するトリガーを設定してください。
+ * * トリガーの設定方法:
+ * 1. Apps Script エディタの左側にある時計のアイコン（トリガー）をクリックします。
+ * 2. 右下の「トリガーを追加」ボタンをクリックします。
+ * 3. 「実行する関数を選択」で「sendOverdueEmailAlerts」を選びます。
+ * 4. 「イベントのソースを選択」で「時間主導型」を選びます。
+ * 5. 「時間ベースのトリガーのタイプを選択」で「日付ベースのタイマー」を選びます。
+ * 6. 「時刻を選択」で「午前8時～9時」を選びます。
+ * 7. 「保存」をクリックします。
+ *
+ * ※このコードは、コード.gs で定義されている以下のグローバル定数に依存します:
+ * ss, itemSheet, rentalSheet, HEADER, HISTORY_HEADER
+ */
+function sendOverdueEmailAlerts() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // 今日の日付の始まりに設定
+
+  const lastRow = itemSheet.getLastRow();
+  if (lastRow < 2) {
+    console.log('チェック対象の物品がありません。');
+    return;
+  }
+
+  const itemValues = itemSheet.getRange(2, 1, lastRow - 1, HEADER.length).getValues();
+
+  const statusIndex = HEADER.indexOf('ステータス');
+  const returnDateIndex = HEADER.indexOf('返却予定日');
+  const idIndex = HEADER.indexOf('管理番号');
+  const nameIndex = HEADER.indexOf('物品名');
+  const borrowerIndex = HEADER.indexOf('貸与者');
+  
+  const overdueItems = [];
+ // ★ overdueItemIds リストの初期化を削除
+
+  itemValues.forEach(row => {
+    const status = row[statusIndex];
+    const returnDate = row[returnDateIndex];
+
+    // ステータスが「貸出中」で、返却予定日が日付データの場合のみチェック
+    if (status === '貸出中' && returnDate instanceof Date) {
+      const normalizedReturnDate = new Date(returnDate);
+      normalizedReturnDate.setHours(0, 0, 0, 0);
+
+      // 返却予定日が今日より前の場合
+      if (normalizedReturnDate < today) {
+        overdueItems.push({
+          id: row[idIndex],
+          name: row[nameIndex],
+          borrower: row[borrowerIndex],
+          returnDate: Utilities.formatDate(normalizedReturnDate, 'JST', 'yyyy/MM/dd')
+        });
+        //  遅延IDリストへの追加を削除
+      }
+    }
+  });
+
+  // 返却遅延の物品が1件以上ある場合のみメールを送信
+  if (overdueItems.length > 0) {
+    // 送信先アドレスを動的に取得
+    let recipientEmails = [];
+
+    // 1. メールマスタから取得 (グローバル定数 ss を使用)
+    const mailMasterSheet = ss.getSheetByName('メールマスタ');
+    if (mailMasterSheet) {
+        const mailValues = mailMasterSheet.getLastRow() > 1 ? mailMasterSheet.getRange(2, 1, mailMasterSheet.getLastRow() - 1, 3).getValues() : [];
+        const defaultEmails = mailValues
+            .filter(row => row[1] === '返却' && row[2] && row[2].trim() !== '') // メール種類が '返却'
+            .map(row => row[2].trim());
+        recipientEmails.push(...defaultEmails);
+    } else {
+        console.warn('「メールマスタ」シートが見つかりません。');
+    }
+
+
+    // 2. 重複を削除
+    const uniqueEmails = [...new Set(recipientEmails.filter(email => email.includes('@')))]; // @を含む有効なアドレスのみ
+
+    if (uniqueEmails.length === 0) {
+        console.log('返却遅延の物品はありましたが、有効な送信先メールアドレスが見つかりませんでした。');
+        return;
+    }
+
+    const subject = '【確認依頼】返却予定日が過ぎています';
+    let body = '以下の物品の返却予定日が過ぎています。\n\n';
+    body += '■ 過ぎている物品の一覧\n';  
+    overdueItems.forEach(item => {
+      body += `・物品名: ${item.name} (管理番号: ${item.id})\n`;
+      body += `　- 貸与者: ${item.borrower || '未設定'}\n`;
+      body += `　- 返却予定日: ${item.returnDate}\n\n`;
+    });
+
+    const appUrl = ScriptApp.getService().getUrl();
+    if (appUrl) {
+        body += '貸与品管理アプリでご確認ください\n';
+        body += appUrl;
+    } else {
+        body += '貸与品管理アプリでご確認ください。';
+    }
+
+    MailApp.sendEmail(uniqueEmails.join(','), subject, body);
+    console.log(`${overdueItems.length}件の返却遅延通知を ${uniqueEmails.length} 件のアドレスに送信しました。`);
+  } else {
+    console.log('返却予定日を過ぎた物品はありません。');
+  }
+}
