@@ -1,0 +1,106 @@
+// ----------------------------------------------------------------
+// アラート機能
+// ----------------------------------------------------------------
+
+/**
+ * 校正期限が近い物品をチェックし、メールで通知します。
+ * この関数を毎日実行するようにトリガー設定をしてください。
+ * * トリガーの設定方法:
+ * 1. スクリプトエディタの左側のメニューから「トリガー」（時計アイコン）をクリックします。
+ * 2. 右下の「トリガーを追加」ボタンをクリックします。
+ * 3. 「実行する関数を選択」で「checkCalibrationDatesAndSendAlerts」を選びます。
+ * 4. 「イベントのソースを選択」で「時間主導型」を選びます。
+ * 5. 「時間ベースのトリガーのタイプを選択」で「日付ベースのタイマー」を選びます。
+ * 6. 「時刻を選択」（午前8時～9時）を選び、「保存」します。
+ *
+ * ※このコードは、コード.gs で定義されている以下のグローバル定数に依存します:
+ * ss, itemSheet, rentalSheet, HEADER, HISTORY_HEADER
+ */
+function checkCalibrationDatesAndSendAlerts() {
+  const NOTIFICATION_DAYS_BEFORE = 30; // 30日前に通知
+
+  // 定数設定を Code.gs と共有
+  const dateColIndex = HEADER.indexOf('校正日・入替日');
+  const nameColIndex = HEADER.indexOf('物品名');
+  const idColIndex = HEADER.indexOf('管理番号');
+
+  if (dateColIndex === -1) {
+    console.error('「校正日・入替日」列が見つかりません。');
+    return;
+  }
+
+  const values = itemSheet.getLastRow() > 1 ? itemSheet.getRange(2, 1, itemSheet.getLastRow() - 1, HEADER.length).getValues() : [];
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + NOTIFICATION_DAYS_BEFORE);
+
+  const expiringItems = [];
+
+  values.forEach(row => {
+    const calibDateValue = row[dateColIndex];
+    if (calibDateValue instanceof Date) {
+      const calibDate = new Date(calibDateValue);
+      calibDate.setHours(0, 0, 0, 0);
+
+      // 期限が今日からNOTIFICATION_DAYS_BEFORE日後の間に含まれるものを抽出
+      if (calibDate >= today && calibDate <= targetDate) {
+        expiringItems.push({
+          id: row[idColIndex],
+          name: row[nameColIndex],
+          date: Utilities.formatDate(calibDate, Session.getScriptTimeZone(), 'yyyy/MM/dd')
+        });
+      }
+    }
+  });
+
+  if (expiringItems.length > 0) {
+    // 送信先アドレスを動的に取得
+    let recipientEmails = [];
+
+    // 1. メールマスタから取得
+    const mailMasterSheet = ss.getSheetByName('メールマスタ');
+    if (mailMasterSheet) {
+        const mailValues = mailMasterSheet.getLastRow() > 1 ? mailMasterSheet.getRange(2, 1, mailMasterSheet.getLastRow() - 1, 3).getValues() : [];
+        const defaultEmails = mailValues
+            .filter(row => row[1] === '校正期限' && row[2] && row[2].trim() !== '') // メール種類が '校正期限'
+            .map(row => row[2].trim());
+        recipientEmails.push(...defaultEmails);
+    } else {
+        console.warn('「メールマスタ」シートが見つかりません。');
+    }
+
+    // 2. 重複を削除
+    const uniqueEmails = [...new Set(recipientEmails.filter(email => email.includes('@')))];
+
+  if (uniqueEmails.length === 0) {
+        console.log('期限切れの物品はありましたが、有効な送信先メールアドレスが見つかりませんでした。');
+        return;
+    }
+
+    let subject = '【貸与品管理】校正期限が近い物品のお知らせ';
+    let body = '以下の物品の校正・入替期限が近づいています。\n\n';
+    
+    expiringItems.sort((a, b) => new Date(a.date) - new Date(b.date)); // 日付順にソート
+
+    expiringItems.forEach(item => {
+      body += `・管理番号: ${item.id}\n`;
+      body += `  物品名: ${item.name}\n`;
+      body += `  期限日: ${item.date}\n\n`;
+    });
+    
+    const appUrl = ScriptApp.getService().getUrl();
+    if (appUrl) {
+      body += `貸与品管理アプリでご確認ください:\n${appUrl}`;
+    } else {
+      body += '貸与品管理アプリよりご確認ください。';
+    }
+
+    MailApp.sendEmail(uniqueEmails.join(','), subject, body);
+    console.log(`${expiringItems.length}件の通知メールを ${uniqueEmails.length} 件のアドレスに送信しました。`);
+  } else {
+    console.log('通知対象の物品はありませんでした。');
+  }
+}
