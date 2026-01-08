@@ -6,6 +6,7 @@ const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 const itemSheet = ss.getSheetByName('物品マスタ');
 const rentalSheet = ss.getSheetByName('貸出履歴');
 const mailSheet = ss.getSheetByName('メールマスタ'); // メール通知用のシート
+const categorySheet = ss.getSheetByName('カテゴリマスタ'); // ★追加
 
 // 物品マスタのヘッダー定義 
 const HEADER = ['管理番号', '物品名', 'カテゴリ', 'ステータス', '貸与者', '現場名', '貸与日', '返却予定日', '校正日・入替日', '備考'];
@@ -31,25 +32,85 @@ function doGet(e) {
  * 初期表示に必要な全データを取得する
  */
 function getInitialData() {
+    // データの取得と整形をtry-catchで囲み、エラー時も空配列を返してアプリが止まらないようにする
     try {
-        const itemValues = itemSheet.getLastRow() > 1 ? itemSheet.getRange(2, 1, itemSheet.getLastRow() - 1, HEADER.length).getValues() : [];
-        const rentalValues = rentalSheet.getLastRow() > 1 ? rentalSheet.getRange(2, 1, rentalSheet.getLastRow() - 1, HISTORY_HEADER.length).getValues() : [];
+        const itemValues = itemSheet && itemSheet.getLastRow() > 1 ? itemSheet.getRange(2, 1, itemSheet.getLastRow() - 1, HEADER.length).getValues() : [];
+        const rentalValues = rentalSheet && rentalSheet.getLastRow() > 1 ? rentalSheet.getRange(2, 1, rentalSheet.getLastRow() - 1, HISTORY_HEADER.length).getValues() : [];
 
-        // 物品マスタを管理番号順にソート
-        itemValues.sort((a, b) => {
-            const idA = a[0] || '';
-            const idB = b[0] || '';
-            return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
-        });
+        // ★修正: 並び替え処理でエラーが出ても、データ表示自体は止めないようにガードする
+        try {
+            const categoryOrder = getCategoryOrderMap();
+            
+            // 物品マスタをソート (1. カテゴリ順, 2. 管理番号順)
+            if (categoryOrder.size > 0) {
+                itemValues.sort((a, b) => {
+                    const catIndex = HEADER.indexOf('カテゴリ');
+                    // 空白を除去して比較する
+                    const catA = String(a[catIndex] || '').trim();
+                    const catB = String(b[catIndex] || '').trim();
+                    
+                    // カテゴリの優先順位を取得 (未登録の場合は大きな値にして後ろへ)
+                    const orderA = categoryOrder.has(catA) ? categoryOrder.get(catA) : 9999;
+                    const orderB = categoryOrder.has(catB) ? categoryOrder.get(catB) : 9999;
+
+                    // まずカテゴリ順で比較
+                    if (orderA !== orderB) {
+                        return orderA - orderB;
+                    }
+
+                    // カテゴリが同じなら管理番号順で比較
+                    const idA = a[0] || '';
+                    const idB = b[0] || '';
+                    return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
+                });
+            }
+        } catch (sortError) {
+            console.warn("並び替え処理中にエラーが発生しましたが、無視して続行します: " + sortError.message);
+            // ソートに失敗しても、元の順序でデータを表示させる
+        }
 
         const items = itemValues.map(row => formatRowAsObject(row, HEADER));
         const rentals = rentalValues.map(row => formatRowAsObject(row, HISTORY_HEADER));
 
         return { items: items, rentals: rentals };
     } catch(e) {
+        // 重大なエラー（シート自体がないなど）の場合
         Logger.log("getInitialData Error: " + e.message + e.stack);
         return { items: [], rentals: [] };
     }
+}
+
+/**
+ * カテゴリマスタからカテゴリ名と並び順のマッピングを作成する
+ * A列: カテゴリ名, B列: 並び順(数値) を想定
+ */
+function getCategoryOrderMap() {
+    const map = new Map();
+    // シートが存在しない、またはデータがない場合は空のマップを返す（エラーにしない）
+    if (!categorySheet) return map;
+
+    try {
+        const lastRow = categorySheet.getLastRow();
+        if (lastRow < 2) return map; // ヘッダーのみ、または空の場合
+
+        // A列(カテゴリ)とB列(並び順)を取得
+        // エラー回避: 最終行までのデータ範囲を安全に指定
+        const values = categorySheet.getRange(2, 1, lastRow - 1, 2).getValues();
+
+        values.forEach((row, index) => {
+            // 空白を除去して取得
+            const name = String(row[0] || '').trim();
+            const order = row[1];
+            if (name) {
+                // B列に数値があればそれを優先、なければ行番号(index)を使用
+                const sortKey = (typeof order === 'number') ? order : index + 1;
+                map.set(name, sortKey);
+            }
+        });
+    } catch (e) {
+        console.warn("カテゴリマスタ読み込みエラー: " + e.message);
+    }
+    return map;
 }
 
 /**
@@ -368,7 +429,7 @@ function returnItem(historyId) {
         const itemId = historyValues[HISTORY_HEADER.indexOf('管理番号')];
         updateItemStatus(itemId);
 
-        // メール通知処理
+        // メール通知処理（履歴に保存されているアドレスへ通知）
         const email = historyValues[HISTORY_HEADER.indexOf('通知先アドレス')];
         if (email || (typeof mailSheet !== 'undefined' && mailSheet)) {
             const itemName = getItemNameById(itemId);
@@ -668,7 +729,7 @@ function cancelReservation(historyId) {
         // 物品マスタのステータスを更新
         updateItemStatus(itemId);
         
-        // メール通知処理
+        // メール通知処理（履歴に保存されているアドレスへ通知）
         if (email || (typeof mailSheet !== 'undefined' && mailSheet)) {
             const itemName = getItemNameById(itemId);
             const borrower = historyValues[HISTORY_HEADER.indexOf('貸与者')];
