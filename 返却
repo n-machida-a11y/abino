@@ -5,16 +5,7 @@
 /**
  * 返却予定日を過ぎた貸出中の物品をチェックし、通知メールを送信します。
  * この関数を毎日午前8時に実行するトリガーを設定してください。
- * * トリガーの設定方法:
- * 1. Apps Script エディタの左側にある時計のアイコン（トリガー）をクリックします。
- * 2. 右下の「トリガーを追加」ボタンをクリックします。
- * 3. 「実行する関数を選択」で「sendOverdueEmailAlerts」を選びます。
- * 4. 「イベントのソースを選択」で「時間主導型」を選びます。
- * 5. 「時間ベースのトリガーのタイプを選択」で「日付ベースのタイマー」を選びます。
- * 6. 「時刻を選択」で「午前8時～9時」を選びます。
- * 7. 「保存」をクリックします。
- *
- * ※このコードは、コード.gs で定義されている以下のグローバル定数に依存します:
+ * * ※このコードは、Code.gs で定義されている以下のグローバル定数に依存します:
  * ss, itemSheet, rentalSheet, HEADER, HISTORY_HEADER
  */
 function sendOverdueEmailAlerts() {
@@ -37,7 +28,6 @@ function sendOverdueEmailAlerts() {
   const idIndex = HEADER.indexOf('管理番号');
   const nameIndex = HEADER.indexOf('物品名');
   const borrowerIndex = HEADER.indexOf('貸与者');
-  // ★追加: カテゴリ列インデックス
   const categoryColIndex = HEADER.indexOf('カテゴリ');
 
   if (categoryColIndex === -1) {
@@ -63,86 +53,88 @@ function sendOverdueEmailAlerts() {
           name: row[nameIndex],
           borrower: row[borrowerIndex],
           returnDate: Utilities.formatDate(normalizedReturnDate, 'JST', 'yyyy/MM/dd'),
-          category: row[categoryColIndex] // ★カテゴリ情報を追加
+          category: row[categoryColIndex] || '' // カテゴリ情報を追加（空文字対応）
         });
       }
     }
   });
 
-  // 返却遅延の物品が1件以上ある場合のみメールを送信
+  // 返却遅延の物品が1件以上ある場合のみ処理
   if (overdueItems.length > 0) {
-    // 抽出された遅延物品のユニークなカテゴリリストを作成
-    const overdueCategories = [...new Set(overdueItems.map(item => item.category))];
-    
-    // 送信先アドレスを動的に取得
-    let recipientEmails = [];
-
-    // 1. メールマスタから取得 (4列目まで取得)
+    // 1. メールマスタから宛先情報を取得
     const mailMasterSheet = ss.getSheetByName('メールマスタ');
-    if (mailMasterSheet) {
-        // 取得する列を4列目（カテゴリ列）まで拡張
-        const mailValues = mailMasterSheet.getLastRow() > 1 
-          ? mailMasterSheet.getRange(2, 1, mailMasterSheet.getLastRow() - 1, 4).getValues() 
-          : [];
-        
-        // ★カテゴリによるフィルタリングロジックを適用
-        const matchingEmails = mailValues
-            .filter(row => {
-                const mailType = row[1]; // メール種類 (インデックス 1)
-                const address = row[2];  // アドレス (インデックス 2)
-                const categoryCondition = row[3]; // カテゴリ (インデックス 3)
-
-                // 1. メール種類が '返却' であること、およびアドレスが有効であること
-                if (mailType !== '返却' || !address || address.trim() === '') {
-                    return false;
-                }
-
-                // 2. カテゴリ条件のチェック（空白の場合は全カテゴリ対象）
-                if (!categoryCondition || categoryCondition.toString().trim() === '') {
-                    return true;
-                }
-
-                // カテゴリ条件をカンマ区切りで配列化し、トリムする
-                const requiredCategories = categoryCondition.toString().split(',')
-                    .map(c => c.trim())
-                    .filter(c => c.length > 0);
-                
-                // 抽出された遅延物品のカテゴリと、メールマスタの指定カテゴリのいずれかが一致するかチェック
-                // 遅延物品のカテゴリがいずれか一つでも requiredCategories に含まれていればOK
-                return overdueCategories.some(overdueCat => requiredCategories.includes(overdueCat));
-            })
-            .map(row => row[2].trim()); // アドレス列を抽出
-
-        recipientEmails.push(...matchingEmails);
-    } else {
-        console.warn('「メールマスタ」シートが見つかりません。');
-    }
-
-
-    // 2. 重複を削除
-    const uniqueEmails = [...new Set(recipientEmails.filter(email => email.includes('@')))]; // @を含む有効なアドレスのみ
-
-    if (uniqueEmails.length === 0) {
-      console.log('返却遅延の物品はありましたが、有効な送信先メールアドレスが見つかりませんでした。（カテゴリフィルタリングの結果、該当者なし）');
+    if (!mailMasterSheet) {
+      console.warn('「メールマスタ」シートが見つかりません。');
       return;
     }
+    
+    // A列: 送り先, B列: メール種類, C列: アドレス, D列: カテゴリ
+    const mailValues = mailMasterSheet.getLastRow() > 1 
+      ? mailMasterSheet.getRange(2, 1, mailMasterSheet.getLastRow() - 1, 4).getValues() 
+      : [];
 
-    const subject = '【確認依頼】返却予定日が過ぎています';
-    let body = '以下の物品の返却予定日が過ぎています。\n\n';
-    body += '■ 過ぎている物品の一覧\n';  
+    // '返却' タイプの宛先リストを作成
+    const mailTargets = mailValues
+      .filter(row => row[1] === '返却' && row[2])
+      .map(row => ({
+        address: row[2].trim(),
+        categories: row[3] ? row[3].toString().split(',').map(c => c.trim()) : [] // カテゴリ指定がない場合は空配列
+      }));
+
+    // 2. 遅延アイテムを「宛先ごと」に振り分ける
+    // キー: 送信先メールアドレス（カンマ区切り文字列）, 値: アイテムリスト
+    const itemsByRecipient = new Map();
+
+    // デフォルト（カテゴリ指定なし）の宛先リストを抽出
+    const defaultRecipients = mailTargets
+      .filter(t => t.categories.length === 0)
+      .map(t => t.address);
+
     overdueItems.forEach(item => {
-      body += `・物品名: ${item.name} (管理番号: ${item.id})\n`;
-      body += `　- カテゴリ: ${item.category}\n`; // ★カテゴリを本文に追加
-      body += `　- 貸与者: ${item.borrower || '未設定'}\n`;
-      body += `　- 返却予定日: ${item.returnDate}\n\n`;
+      // このアイテムのカテゴリにマッチする「特定の宛先」を探す
+      const specificTargets = mailTargets.filter(t => t.categories.includes(item.category));
+      
+      let recipients = [];
+      if (specificTargets.length > 0) {
+        // カテゴリ指定があれば、その宛先のみに送る（デフォルト宛先は除外）
+        recipients = specificTargets.map(t => t.address);
+      } else {
+        // カテゴリ指定がなければ、デフォルト宛先に送る
+        recipients = defaultRecipients;
+      }
+
+      // 重複を除去してソート（キーとして一意にするため）
+      const uniqueRecipients = [...new Set(recipients)].sort();
+      
+      if (uniqueRecipients.length > 0) {
+        const recipientKey = uniqueRecipients.join(',');
+        if (!itemsByRecipient.has(recipientKey)) {
+          itemsByRecipient.set(recipientKey, []);
+        }
+        itemsByRecipient.get(recipientKey).push(item);
+      }
     });
 
-    // URLを固定値を使用するように変更
-    body += '貸与品管理アプリでご確認ください\n';
-    body += APP_URL;
+    // 3. グループごとにメール送信
+    itemsByRecipient.forEach((items, recipientString) => {
+      const subject = '【確認依頼】返却予定日が過ぎています';
+      let body = '以下の物品の返却予定日が過ぎています。\n\n';
+      body += '■ 過ぎている物品の一覧\n';
+      
+      items.forEach(item => {
+        body += `・物品名: ${item.name} (管理番号: ${item.id})\n`;
+        body += `　- カテゴリ: ${item.category}\n`;
+        body += `　- 貸与者: ${item.borrower || '未設定'}\n`;
+        body += `　- 返却予定日: ${item.returnDate}\n\n`;
+      });
 
-    MailApp.sendEmail(uniqueEmails.join(','), subject, body);
-    console.log(`${overdueItems.length}件の返却遅延通知を ${uniqueEmails.length} 件のアドレスに送信しました。`);
+      body += '貸与品管理アプリでご確認ください\n';
+      body += APP_URL;
+
+      MailApp.sendEmail(recipientString, subject, body);
+      console.log(`[返却遅延] ${items.length}件の通知を ${recipientString} に送信しました。`);
+    });
+
   } else {
     console.log('返却予定日を過ぎた物品はありません。');
   }
