@@ -338,8 +338,10 @@ function lendItem(data) {
         const itemRow = findRowById(itemSheet, itemId);
         if (itemRow === -1) throw new Error('対象の物品が見つかりません。');
 
-        // カテゴリが「通信機器」の場合のみ現場名を必須にする
+        // カテゴリ取得
         const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+
+        // カテゴリが「通信機器」の場合のみ現場名を必須にする
         if (itemCategory === '通信機器' && !siteName) {
             throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
         }
@@ -372,6 +374,7 @@ function lendItem(data) {
         updateItemStatus(itemId);
 
         // メール通知処理
+        // 貸出は「編集」または専用のステータスがないため、マスタの「編集」として通知
         if (email || (typeof mailSheet !== 'undefined' && mailSheet)) { 
             const itemName = getItemNameById(itemId);
             const subject = `【貸与品管理】物品貸出通知 (${itemName})`;
@@ -389,7 +392,7 @@ function lendItem(data) {
 ---
 貸与品管理アプリ`;
 
-            sendNotificationEmail(email, subject, body);
+            sendNotificationEmail(email, subject, body, '編集', itemCategory);
         }
 
         return { success: true, message: '貸出処理が完了しました。', shouldReload: true };
@@ -429,6 +432,9 @@ function returnItem(historyId) {
         const itemId = historyValues[HISTORY_HEADER.indexOf('管理番号')];
         updateItemStatus(itemId);
 
+        // カテゴリ取得
+        const itemCategory = getItemCategoryById(itemId);
+
         // メール通知処理（履歴に保存されているアドレスへ通知）
         const email = historyValues[HISTORY_HEADER.indexOf('通知先アドレス')];
         if (email || (typeof mailSheet !== 'undefined' && mailSheet)) {
@@ -453,7 +459,7 @@ function returnItem(historyId) {
 ---
 貸与品管理アプリ`;
 
-            sendNotificationEmail(email, subject, body);
+            sendNotificationEmail(email, subject, body, '返却', itemCategory);
         }
 
         return { success: true, message: '返却処理が完了しました。', shouldReload: true };
@@ -479,8 +485,10 @@ function updateRentalPeriod(data) {
         const itemRow = findRowById(itemSheet, itemId);
         if (itemRow === -1) throw new Error('対象の物品が見つかりません。');
 
-        // カテゴリが「通信機器」の場合のみ現場名を必須にする
+        // カテゴリ取得
         const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+
+        // カテゴリが「通信機器」の場合のみ現場名を必須にする
         if (itemCategory === '通信機器' && !siteName) {
             throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
         }
@@ -539,7 +547,7 @@ function updateRentalPeriod(data) {
 ---
 貸与品管理アプリ`;
 
-            sendNotificationEmail(email, subject, body);
+            sendNotificationEmail(email, subject, body, '編集', itemCategory);
         }
 
         return { success: true, message: '貸出内容を更新しました。', shouldReload: true };
@@ -565,8 +573,10 @@ function addReservation(data) {
         const itemRow = findRowById(itemSheet, itemId);
         if (itemRow === -1) throw new Error('対象の物品が見つかりません。');
         
-        // カテゴリが「通信機器」の場合のみ現場名を必須にする
+        // カテゴリ取得
         const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+
+        // カテゴリが「通信機器」の場合のみ現場名を必須にする
         if (itemCategory === '通信機器' && !siteName) {
             throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
         }
@@ -614,7 +624,7 @@ function addReservation(data) {
 ---
 貸与品管理アプリ`;
 
-            sendNotificationEmail(email, subject, body);
+            sendNotificationEmail(email, subject, body, '予約', itemCategory);
         }
 
         return { success: true, message: '予約を受け付けました。', shouldReload: true };
@@ -647,9 +657,11 @@ function updateReservation(data) {
         // 物品マスタでカテゴリと校正日をチェック
         const itemRow = findRowById(itemSheet, itemId);
         if (itemRow === -1) throw new Error('対象の物品が見つかりません。'); // 物品が削除されたケース
+        
+        // カテゴリ取得
+        const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
 
         // カテゴリが「通信機器」の場合のみ現場名を必須にする
-        const itemCategory = itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
         if (itemCategory === '通信機器' && !siteName) {
             throw new Error('「通信機器」カテゴリの物品には、現場名の入力が必須です。');
         }
@@ -694,7 +706,7 @@ function updateReservation(data) {
 ---
 貸与品管理アプリ`;
 
-            sendNotificationEmail(email, subject, body);
+            sendNotificationEmail(email, subject, body, '編集', itemCategory);
         }
         
         return { success: true, message: '予約内容を更新しました。', shouldReload: true };
@@ -729,6 +741,9 @@ function cancelReservation(historyId) {
         // 物品マスタのステータスを更新
         updateItemStatus(itemId);
         
+        // カテゴリ取得
+        const itemCategory = getItemCategoryById(itemId);
+
         // メール通知処理（履歴に保存されているアドレスへ通知）
         if (email || (typeof mailSheet !== 'undefined' && mailSheet)) {
             const itemName = getItemNameById(itemId);
@@ -752,7 +767,7 @@ function cancelReservation(historyId) {
 ---
 貸与品管理アプリ`;
 
-            sendNotificationEmail(email, subject, body);
+            sendNotificationEmail(email, subject, body, '予約', itemCategory);
         }
 
         return { success: true, message: '予約をキャンセルしました。', shouldReload: true };
@@ -798,6 +813,9 @@ function lendFromReservation(historyId) {
         const email = historyValues[HISTORY_HEADER.indexOf('通知先アドレス')];
         updateItemStatus(itemId); // 物品マスタのステータス更新
         
+        // カテゴリ取得
+        const itemCategory = getItemCategoryById(itemId);
+
         // メール通知処理
         if (email || (typeof mailSheet !== 'undefined' && mailSheet)) {
             const itemName = getItemNameById(itemId);
@@ -821,7 +839,7 @@ function lendFromReservation(historyId) {
 ---
 貸与品管理アプリ`;
 
-            sendNotificationEmail(email, subject, body);
+            sendNotificationEmail(email, subject, body, '編集', itemCategory);
         }
 
         return { success: true, message: '予約を貸出中に変更しました。', shouldReload: true };
@@ -1143,6 +1161,23 @@ function findRowById(sheet, id) {
 }
 
 /**
+ * 物品IDから物品のカテゴリを取得する
+ * @param {string} itemId
+ * @return {string} カテゴリ名 (見つからない場合は空文字)
+ */
+function getItemCategoryById(itemId) {
+    try {
+        const itemRow = findRowById(itemSheet, itemId);
+        if (itemRow === -1) return '';
+        // HEADER定数を使って「カテゴリ」列のインデックスを動的に解決
+        return itemSheet.getRange(itemRow, HEADER.indexOf('カテゴリ') + 1).getValue();
+    } catch (e) {
+        Logger.log(`getItemCategoryById Error: ${e.message}`);
+        return '';
+    }
+}
+
+/**
  * スプレッドシートの行データ（配列）を、ヘッダーに基づいたオブジェクトに変換する
  * 日付は 'yyyy/MM/dd' 形式の文字列に変換する
  * @param {Array} rowArray 行データの配列
@@ -1226,11 +1261,12 @@ function normalizeDate(date) {
 // ----------------------------------------------------------------
 
 /**
- * メールマスタシートから指定された種類のメールアドレスを取得する
- * @param {string} mailType - メール種類 (例: '編集')
+ * メールマスタシートから指定された種類かつカテゴリに対応するメールアドレスを取得する
+ * @param {string} mailType - メール種類 (例: '編集', '予約', '返却')
+ * @param {string} targetCategory - 操作対象の物品カテゴリ (例: '共用車', '通信機器')
  * @return {string[]} メールアドレスの配列
  */
-function getMailMasterAddresses(mailType) {
+function getMailMasterAddresses(mailType, targetCategory) {
     if (typeof mailSheet === 'undefined' || !mailSheet) {
         Logger.log("「メールマスタ」シートが見つかりません。");
         return [];
@@ -1239,12 +1275,40 @@ function getMailMasterAddresses(mailType) {
         const lastRow = mailSheet.getLastRow();
         if (lastRow < 2) return [];
 
-        // A列: 送り先, B列: メール種類, C列: アドレス と想定
-        const values = mailSheet.getRange(2, 1, lastRow - 1, 3).getValues();
+        // A列: 送り先, B列: メール種類, C列: アドレス, D列: カテゴリ
+        // D列(カテゴリ)まで範囲を拡張して取得
+        const values = mailSheet.getRange(2, 1, lastRow - 1, 4).getValues();
         
-        const addresses = values
-            .filter(row => row[1] === mailType && row[2]) // B列がmailTypeと一致し、C列にアドレスがある
-            .map(row => row[2].trim()) // C列のアドレス
+        // 1. mailTypeでフィルタリング
+        // 2. 有効なアドレスがあるかチェック
+        const candidates = values.filter(row => row[1] === mailType && row[2]);
+
+        const targetCat = targetCategory ? String(targetCategory).trim() : '';
+
+        // 3. カテゴリマッチング
+        // 指定されたカテゴリを条件に含む行を探す (カンマ区切り対応)
+        const specificMatches = candidates.filter(row => {
+            const rowCategory = String(row[3] || '').trim();
+            if (!rowCategory) return false; // カテゴリ指定がない行は除外
+
+            // カンマ区切りで分割してチェック
+            const categories = rowCategory.split(',').map(c => c.trim());
+            return categories.includes(targetCat);
+        });
+
+        let finalRows = [];
+
+        if (specificMatches.length > 0) {
+            // カテゴリ指定がある宛先が見つかった場合、その宛先のみを採用する
+            // (例: '共用車'の場合、総務のみ)
+            finalRows = specificMatches;
+        } else {
+            // カテゴリ指定がある宛先が見つからない場合、カテゴリ指定がない（空白の）宛先を採用する
+            // (例: '通信機器'の場合、西川様のみ)
+            finalRows = candidates.filter(row => !String(row[3] || '').trim());
+        }
+
+        const addresses = finalRows.map(row => row[2].trim())
             .filter(address => address.length > 0 && address.includes('@')); // 有効なアドレスか簡易チェック
 
         return [...new Set(addresses)]; // 重複を除外
@@ -1259,8 +1323,10 @@ function getMailMasterAddresses(mailType) {
  * @param {string} formEmail - フォームから入力されたメールアドレス (カンマ区切り)
  * @param {string} subject - メールの件名
  * @param {string} body - メールの本文
+ * @param {string} mailType - メール種類 ('編集', '返却', '予約')
+ * @param {string} targetCategory - 物品カテゴリ
  */
-function sendNotificationEmail(formEmail, subject, body) {
+function sendNotificationEmail(formEmail, subject, body, mailType, targetCategory) {
     let recipients = [];
 
     // 1. フォームからのアドレスを追加
@@ -1271,8 +1337,10 @@ function sendNotificationEmail(formEmail, subject, body) {
         recipients = recipients.concat(emailsFromForm);
     }
 
-    // 2. メールマスタ（'編集'）からのアドレスを追加
-    const masterAddresses = getMailMasterAddresses('編集');
+    // 2. メールマスタからのアドレスを追加 (カテゴリによるフィルタリング適用)
+    // mailTypeが指定されていない場合はデフォルトで'編集'とする
+    const type = mailType || '編集';
+    const masterAddresses = getMailMasterAddresses(type, targetCategory);
     recipients = recipients.concat(masterAddresses);
 
     // 3. 宛先の重複を除外し、空でなければ送信
@@ -1287,13 +1355,13 @@ function sendNotificationEmail(formEmail, subject, body) {
                 body: body,
                 // noReply: true // 返信不可にする場合はコメントアウトを解除
             });
-            Logger.log(`メール送信成功: ${recipientString}`);
+            Logger.log(`メール送信成功: ${recipientString} (Type: ${type}, Category: ${targetCategory})`);
         } catch (e) {
             Logger.log(`メール送信エラー: ${e.message} ${e.stack}`);
             // メール送信エラーは操作の成功/失敗に影響させない
         }
     } else {
-        Logger.log("通知先アドレスが指定されていないため、メールは送信されませんでした。");
+        Logger.log(`通知先アドレスが指定されていないため、メールは送信されませんでした。(Type: ${type}, Category: ${targetCategory})`);
     }
 }
 
