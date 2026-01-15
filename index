@@ -13,6 +13,11 @@
         .status-lent { background-color: #f8d7da !important; }
         .status-stock { background-color: #d1e7dd !important; }
         .status-reserved { background-color: #cce5ff !important; }
+        /* ★修正: 廃棄ステータス用のスタイル（文字色だけでなく背景色も適用） */
+        .status-disposed { background-color: #e9ecef !important; color: #6c757d; }
+        /* 行全体に背景色を適用するためにtdにも継承させる */
+        .status-disposed td { background-color: #e9ecef !important; color: #6c757d; }
+        
         th { white-space: nowrap; }
         .action-buttons button { margin-right: 5px; }
         .action-buttons > button:last-child { margin-right: 0; }
@@ -77,7 +82,7 @@
        <div class="row g-2 mb-3 align-items-center">
                     <div class="col-12 col-md-3"><select id="rentalFilterCategory" class="form-select"><option value="">カテゴリ (すべて)</option></select></div>
                     <div class="col-12 col-md-3"><select id="rentalFilterItem" class="form-select"><option value="">物品 (すべて)</option></select></div>
-                    <div class="col-12 col-md-2"><select id="rentalFilterStatus" class="form-select"><option value="">ステータス (すべて)</option><option value="貸出中">貸出中</option><option value="予約あり">予約あり</option><option value="在庫">在庫</option></select></div>
+                    <div class="col-12 col-md-2"><select id="rentalFilterStatus" class="form-select"><option value="">ステータス (すべて)</option><option value="貸出中">貸出中</option><option value="予約あり">予約あり</option><option value="在庫">在庫</option><option value="廃棄">廃棄</option></select></div>
         
             <div class="col-12 col-md-3"><input type="text" id="rentalSearchInput" class="form-control" placeholder="貸与者・現場名..."></div>
                     <div class="col-12 col-md-1"><button id="resetRentalFiltersBtn" class="btn btn-outline-secondary w-100"><i class="bi bi-arrow-clockwise"></i></button></div>
@@ -258,6 +263,9 @@
     <script>
         let allItems = [], allRentals = [], calendar;
         let isCalendarInitialized = false;
+        // ★追加: グローバル変数として保持
+        let globalCategoryOrder = {}; 
+
         const itemModal = new bootstrap.Modal(document.getElementById('itemModal'));
         const lendModal = new bootstrap.Modal(document.getElementById('lendModal'));
         const editRentalModal = new bootstrap.Modal(document.getElementById('editRentalModal'));
@@ -282,6 +290,8 @@
                 if(data){
                     allItems = data.items;
                     allRentals = data.rentals;
+                    // ★追加: データ取得時にカテゴリ順序を学習する
+                    learnCategoryOrder(allItems);
                     displayAllTables();
                   
                     populateFilters();
@@ -296,6 +306,8 @@
                 if(data){
                     allItems = data.items;
                     allRentals = data.rentals;
+                    // ★追加: データ再取得時にもカテゴリ順序を再学習
+                    learnCategoryOrder(allItems);
                     displayAllTables();
                   
                     populateFilters(); // カテゴリリストも更新
@@ -306,6 +318,17 @@
                 }
                 hideLoading();
             }).withFailureHandler(handleError).getInitialData();
+        }
+
+        // ★追加: カテゴリ順序を学習する関数
+        function learnCategoryOrder(items) {
+            globalCategoryOrder = {};
+            let orderCounter = 0;
+            items.forEach(item => {
+                if (!(item.カテゴリ in globalCategoryOrder)) {
+                    globalCategoryOrder[item.カテゴリ] = orderCounter++;
+                }
+            });
         }
 
         function displayAllTables() {
@@ -343,13 +366,26 @@
                   (!statusFilter || item.ステータス === statusFilter) &&
                        (!searchTerm || searchTarget.includes(searchTerm)); 
             });
+
+            // ★修正: グローバルに保持したカテゴリ順序を使ってソート
+            filtered.sort((a, b) => {
+                const catA = globalCategoryOrder[a.カテゴリ] !== undefined ? globalCategoryOrder[a.カテゴリ] : 9999;
+                const catB = globalCategoryOrder[b.カテゴリ] !== undefined ? globalCategoryOrder[b.カテゴリ] : 9999;
+                
+                if (catA !== catB) {
+                    return catA - catB;
+                }
+                // カテゴリが同じ場合は管理番号の昇順 (数値として比較)
+                return String(a.管理番号).localeCompare(String(b.管理番号), undefined, { numeric: true, sensitivity: 'base' });
+            });
+
             filtered.forEach(item => {
                 const tr = document.createElement('tr');
                 const isExpired = isItemExpired(item);
                 const expiredTitle = isExpired ? `校正期限(${item['校正日・入替日']})切れのため操作できません` : '';
                 
-                const calendarBtn = `<button class="btn btn-outline-primary btn-sm" onclick="goToFilteredCalendar('${item.管理番号}')">カレンダー</button>`;
-                const editSchedulesBtn = `<button class="btn btn-secondary btn-sm" onclick="openScheduleListModal('${item.管理番号}')">編集</button>`;
+                let calendarBtn = `<button class="btn btn-outline-primary btn-sm" onclick="goToFilteredCalendar('${item.管理番号}')">カレンダー</button>`;
+                let editSchedulesBtn = `<button class="btn btn-secondary btn-sm" onclick="openScheduleListModal('${item.管理番号}')">編集</button>`;
 
                 let otherActionButtonsHTML = '';
                 const reserveBtn = `<button class="btn btn-success btn-sm" onclick="openReservationModal('${item.管理番号}')" ${isExpired ? 'disabled' : ''} title="${expiredTitle}">予約</button>`;
@@ -370,6 +406,14 @@
                         tr.className = 'status-reserved';
                         statusBadge = `<span class="badge bg-primary">${item.ステータス}</span>`;
                         otherActionButtonsHTML = `<button class="btn btn-info btn-sm" onclick="openLendModal('${item.管理番号}')" ${isExpired ? 'disabled' : ''} title="${expiredTitle}">貸出</button> ${reserveBtn}`;
+                        break;
+                    case '廃棄': // ★追加: 廃棄ステータスの処理
+                        tr.className = 'status-disposed';
+                        statusBadge = `<span class="badge bg-secondary">${item.ステータス}</span>`;
+                        // ボタンをすべて無効化（表示はするが押せない状態）
+                        calendarBtn = `<button class="btn btn-outline-secondary btn-sm" disabled>カレンダー</button>`;
+                        editSchedulesBtn = `<button class="btn btn-secondary btn-sm" disabled>編集</button>`;
+                        otherActionButtonsHTML = `<button class="btn btn-secondary btn-sm" disabled>操作不可</button>`;
                         break;
                     case '在庫':
                     default:
@@ -417,6 +461,18 @@
                     return item[filterColumn] && String(item[filterColumn]).toLowerCase().includes(searchTerm);
                 }
             });
+
+            // ★修正: グローバルに保持したカテゴリ順序を使ってソート
+            filteredItems.sort((a, b) => {
+                const catA = globalCategoryOrder[a.カテゴリ] !== undefined ? globalCategoryOrder[a.カテゴリ] : 9999;
+                const catB = globalCategoryOrder[b.カテゴリ] !== undefined ? globalCategoryOrder[b.カテゴリ] : 9999;
+                
+                if (catA !== catB) {
+                    return catA - catB;
+                }
+                return String(a.管理番号).localeCompare(String(b.管理番号), undefined, { numeric: true, sensitivity: 'base' });
+            });
+
             filteredItems.forEach(item => {
                 const tr = document.createElement('tr');
                 const actionButtonsHTML = `<button class="btn btn-secondary btn-sm" onclick="openItemModal('${item.管理番号}')">編集</button><button class="btn btn-danger btn-sm" onclick="handleDelete('${item.管理番号}')">削除</button>`;
